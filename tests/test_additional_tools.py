@@ -11,12 +11,16 @@ from agent.models import Source, SourceType
 class TestWebTools(unittest.TestCase):
     """Test web-related tools"""
 
-    @patch('ddgs.DDGS')
+    @patch('agent.tools.agent_tools.ddgs')
     def test_web_search_tool_success(self, mock_ddgs):
         """Test WebSearchTool executes successfully"""
-        mock_ddgs.return_value.__enter__.return_value.text = iter([
-            {"href": "http://test.com", "title": "Test", "body": "Test content"}
-        ])
+        mock_ddgs.DDGS.return_value = Mock(
+            __enter__=Mock(return_value=Mock(
+                text=iter([
+                    {"href": "http://test.com", "title": "Test", "body": "Test content"}
+                ])
+            ))
+        )
 
         tool = WebSearchTool()
         result = tool.execute(query="test query", max_results=5)
