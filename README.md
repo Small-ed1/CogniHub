@@ -31,8 +31,8 @@ Router Phase 1 provides a web-based interface for interacting with AI models, ma
 ## Current Status
 
 - Backend: Functional with extended settings API, real model fetching, auto-model switching
-- UI: Partially implemented, settings and sidebar buttons currently non-functional (debugging in progress)
-- Deep Research: Backend supports, UI needs progress indicators
+- UI: Fully functional with working settings panel, sidebar navigation, chat management
+- Deep Research: Backend supports, UI has research mode selection
 
 ## Development
 
