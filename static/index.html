@@ -4,214 +4,394 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ollama Web</title>
+
   <link rel="stylesheet" href="/static/styles.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" id="prismTheme" />
+
+  <!-- Prism (syntax highlighting) -->
+  <link id="prismTheme" rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 </head>
+
 <body>
   <div id="sidebarOverlay" class="sidebarOverlay hidden"></div>
 
+  <!-- Sidebar: NAV ONLY -->
   <aside id="sidebar" class="sidebar closed">
     <div class="sidebarTop">
       <div class="sidebarBrand">Ollama Web</div>
-      <button id="btnSidebarClose" class="iconbtn" aria-label="Close sidebar">✕</button>
+      <button id="btnSidebarClose" class="iconbtn">✕</button>
     </div>
 
     <div class="sidebarTabs">
-      <button id="tabChats" class="tab active" aria-label="Chats tab">Chats</button>
-      <button id="tabDocs" class="tab" aria-label="Docs tab">Docs</button>
-      <button id="tabSettings" class="tab" aria-label="Settings tab">Settings</button>
+      <button id="tabChats" class="tab active">Chats</button>
+      <button id="tabDocs" class="tab">Docs</button>
+      <!-- kept for JS compatibility -->
+      <button id="tabSettings" class="tab hidden">Settings</button>
     </div>
 
-    <!-- CHATS -->
     <div id="panelChats" class="sidebarPanel">
       <div class="row">
-        <button id="btnNewChat" class="btn" aria-label="New chat">+ New</button>
-        <label class="pill">
-          <input type="checkbox" id="showArchived" />
-          <span>Archived</span>
-        </label>
-      </div>
-
-      <input id="chatSearch" class="input" placeholder="Search chats..." aria-label="Search chats" />
-
-      <div id="chatList" class="chatList"></div>
-
-      <div class="row" style="justify-content:space-between;">
-        <div class="export-dropdown">
-          <button id="btnExportChat" class="btn" aria-label="Export current chat">Export ▼</button>
-          <div class="export-menu hidden">
-            <button class="export-option" data-format="markdown">Markdown</button>
-            <button class="export-option" data-format="json">JSON</button>
-            <button class="export-option" data-format="txt">Plain Text</button>
-          </div>
-        </div>
-        <button id="btnClear" class="btn" aria-label="Clear chat">🧹 Clear</button>
-      </div>
-    </div>
-
-    <!-- DOCS -->
-    <div id="panelDocs" class="sidebarPanel hidden">
-      <div class="field">
-        <div class="label">Upload document</div>
-        <input id="fileUpload" type="file" class="input" aria-label="Upload doc"/>
-        <div class="hint">Text files work best. PDFs/Docx require extraction support (not included).</div>
-      </div>
-
-      <div class="row" style="justify-content:space-between;align-items:center;">
-        <div class="label" style="margin:0;">Active docs</div>
-        <button id="btnDocsAll" class="btn" aria-label="Select all docs">All</button>
-        <button id="btnDocsNone" class="btn" aria-label="Select no docs">None</button>
-      </div>
-
-      <div id="docsList" class="docsList"></div>
-    </div>
-
-    <!-- SETTINGS -->
-    <div id="panelSettings" class="sidebarPanel hidden">
-      <div class="field">
-        <div class="label">Preset</div>
-        <select id="presetSelect" class="select" aria-label="Preset"></select>
-        <div class="hint">Presets set model + temperature + context + RAG defaults.</div>
-      </div>
-
-      <div class="field">
-        <div class="label">System prompt</div>
-        <textarea id="systemPrompt" class="textarea" rows="4" aria-label="System prompt"></textarea>
-      </div>
-
-      <div class="grid2">
-        <div class="field">
-          <div class="label">Temperature</div>
-          <input id="temperature" type="number" step="0.05" min="0" max="2" class="input" aria-label="Temperature" />
-        </div>
-
-        <div class="field">
-          <div class="label">Context (num_ctx)</div>
-          <input id="numCtx" type="number" step="256" min="512" class="input" aria-label="Context size" />
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="field">
-          <div class="label">RAG Top K</div>
-          <input id="topK" type="number" min="1" max="20" value="6" class="input" aria-label="Top K"/>
-        </div>
-
-        <div class="field">
-          <div class="label">MMR (diversify)</div>
-          <label class="pill" style="width:fit-content;">
-            <input type="checkbox" id="mmrToggle" />
-            <span>On</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="label">Keep alive</div>
-        <input id="keepAlive" class="input" placeholder="5m" aria-label="Keep alive" />
-        <div class="hint">Example: 0, 5m, 30m</div>
-      </div>
-
-      <div class="field">
-        <label class="pill" style="width:fit-content;">
-          <input type="checkbox" id="autoModelToggle" aria-label="Auto-pick best model for this prompt" />
-          <span>Auto model</span>
-        </label>
+        <button id="btnNewChat" class="btn">New chat</button>
+        <label class="checkbox"><input id="showArchived" type="checkbox" />Archived</label>
       </div>
 
       <div class="row">
-        <button id="btnSaveSettings" class="btn primary" aria-label="Save settings">Save</button>
-        <button id="btnResetSettings" class="btn" aria-label="Reset settings">Reset</button>
+        <div class="export-dropdown">
+          <button id="btnExportChat" class="btn">Export</button>
+          <div id="exportMenu" class="export-menu hidden">
+            <button class="export-option" data-format="md">Markdown</button>
+            <button class="export-option" data-format="json">JSON</button>
+            <button class="export-option" data-format="txt">Plain text</button>
+          </div>
+        </div>
+        <button id="btnClear" class="btn danger">Clear</button>
       </div>
+
+      <input id="chatSearch" class="input" placeholder="Search chats" />
+      <div id="chatList" class="list"></div>
+    </div>
+
+    <div id="panelDocs" class="sidebarPanel hidden">
+      <input id="fileUpload" type="file" class="input file" multiple />
+      <div class="row">
+        <button id="btnDocsAll" class="btn">All</button>
+        <button id="btnDocsNone" class="btn">None</button>
+      </div>
+      <div id="docsList" class="list"></div>
     </div>
   </aside>
 
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <div class="logo">◎</div>
-        <div class="titles">
-          <div class="title">Ollama Web</div>
-          <div class="subtitle">
-            <span id="statusDot" class="dot"></span>
-            <span id="statusText">Checking Ollama…</span>
-            <span id="ragSummary" class="badge" title="Active docs for this chat">RAG: off</span>
-          </div>
+      <div class="topLeft">
+        <button id="btnSidebar" class="iconbtn">☰</button>
+        <div class="brandBlock">
+          <div class="brand">Ollama Web</div>
+          <div class="subtitle"><span id="statusDot"></span><span id="statusText">Idle</span></div>
         </div>
       </div>
 
-      <div class="controls">
-        <button id="btnSidebar" class="btn" aria-label="Open sidebar">☰</button>
-        
-        <button id="btnTheme" class="iconbtn" aria-label="Toggle theme">◐</button>
-        
-        <button id="btnHelp" class="iconbtn" aria-label="Keyboard shortcuts">?</button>
-        
-        <label class="pill" style="gap:8px;">
-          <input type="checkbox" id="ragToggle" />
-          <span>RAG</span>
-        </label> 
-        
-        <select id="modelSelect" class="select" aria-label="Model"></select> 
-        
-        <button id="btnStop" class="btn danger hidden" aria-label="Stop generation">■ Stop</button>
+      <div class="topRight">
+        <select id="modelSelect" class="input"></select>
+        <select id="presetSelect" class="input"></select>
+
+        <label class="checkbox compact"><input id="autoModelToggle" type="checkbox" />Auto</label>
+
+        <button id="btnSettings" class="iconbtn">⚙</button>
+        <button id="btnHelp" class="iconbtn">?</button>
+        <button id="btnTheme" class="iconbtn">🌓</button>
       </div>
     </header>
 
     <main class="main">
-      <div id="chat" class="chat" aria-live="polite"></div>
-      <button id="scrollToBottomBtn" class="scroll-to-bottom-btn" title="Scroll to bottom">
-        <span>↓</span>
-        <span class="scroll-count" id="scrollCount" style="display:none;"></span>
-      </button>
-      <div id="scrollHint" class="scroll-hint hidden">New messages ↓</div>
+      <div id="chat" class="chat"></div>
+      <div id="scrollHint" class="scroll-hint hidden">New messages</div>
+      <button id="scrollToBottomBtn" class="scroll-to-bottom-btn hidden">↓ <span id="scrollCount"></span></button>
     </main>
 
-    <footer class="composer">
-      <button id="btnEditLast" class="btn" aria-label="Edit last user message">✎ Edit</button>
-
-      <div id="slashPalette" class="slashPalette hidden" role="listbox" aria-label="Slash commands"></div>
-
-      <textarea
-        id="prompt"
-        class="input"
-        rows="1"
-        aria-label="Chat prompt"
-        placeholder="Type a message… (Ctrl+Enter to send)"
-      ></textarea>
-
-      <button id="btnSend" class="btn primary" aria-label="Send (Ctrl+Enter)">Send</button>
-    </footer>
-  </div>
-
-  <!-- SOURCES MODAL -->
-  <div id="modalOverlay" class="modalOverlay hidden"></div>
-  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Source viewer">
-    <div class="modalHead">
-      <div id="modalTitle" class="modalTitle">Source</div>
-      <button id="btnModalClose" class="iconbtn" aria-label="Close">✕</button>
-    </div>
-    <div id="modalBody" class="modalBody"></div>
-  </div>
-
-  <!-- KEYBOARD SHORTCUTS MODAL -->
-  <div id="shortcutsOverlay" class="modalOverlay hidden"></div>
-  <div id="shortcutsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-    <div class="modalHead">
-      <div class="modalTitle">Keyboard Shortcuts</div>
-      <button id="btnShortcutsClose" class="iconbtn" aria-label="Close">✕</button>
-    </div>
-    <div class="modalBody shortcutsList">
-      <div class="shortcutItem"><span class="shortcutKey">Ctrl+Enter</span> <span class="shortcutDesc">Send message</span></div>
-      <div class="shortcutItem"><span class="shortcutKey">Ctrl+K</span> <span class="shortcutDesc">Clear chat</span></div>
-      <div class="shortcutItem"><span class="shortcutKey">Ctrl+N</span> <span class="shortcutDesc">New chat</span></div>
-      <div class="shortcutItem"><span class="shortcutKey">Ctrl+/</span> <span class="shortcutDesc">Show shortcuts</span></div>
-      <div class="shortcutItem"><span class="shortcutKey">Escape</span> <span class="shortcutDesc">Stop generation</span></div>
-      <div class="shortcutItem"><span class="shortcutKey">Ctrl+E</span> <span class="shortcutDesc">Edit last message</span></div>
+    <div class="composer">
+      <div id="slashPalette" class="slashPalette hidden"></div>
+      <textarea id="prompt" class="input" rows="2" placeholder="Type a message…"></textarea>
+      <div class="composerBtns">
+        <button id="btnSend" class="btn primary">Send</button>
+        <button id="btnStop" class="btn danger hidden">Stop</button>
+        <button id="btnEditLast" class="btn">Edit last</button>
+      </div>
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<!-- Settings modal (fancy) -->
+<div id="settingsOverlay" class="modalOverlay hidden"></div>
+
+<div id="settingsModal" class="modal hidden settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modalHead settingsHead">
+    <div class="settingsTitleWrap">
+      <div id="settingsTitle" class="modalTitle settingsTitle">Settings</div>
+      <div class="settingsSubtitle">Make it feel like *your* cockpit.</div>
+    </div>
+    <button id="btnSettingsClose" class="iconbtn fancyClose" aria-label="Close settings">✕</button>
+  </div>
+
+  <div class="modalBody settingsBody">
+    <!-- Tabs -->
+    <div class="settingsTabs" role="tablist" aria-label="Settings tabs">
+      <button class="settingsTab active" type="button" data-settings-tab="ui" role="tab" aria-selected="true">UI</button>
+      <button class="settingsTab" type="button" data-settings-tab="chat" role="tab" aria-selected="false">Chat</button>
+      <button class="settingsTab" type="button" data-settings-tab="model" role="tab" aria-selected="false">Model</button>
+      <button class="settingsTab" type="button" data-settings-tab="privacy" role="tab" aria-selected="false">Privacy</button>
+    </div>
+
+    <!-- Panels -->
+    <div class="settingsPanels">
+      <!-- UI -->
+      <section class="settingsPanel" data-settings-panel="ui">
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Look & feel</div>
+            <div class="cardHint">Small stuff that makes the app feel expensive.</div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="uiFontSize">Font size</label>
+              <select id="uiFontSize" class="input">
+                <option value="sm">Small</option>
+                <option value="md" selected>Medium</option>
+                <option value="lg">Large</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="uiDensity">Density</label>
+              <select id="uiDensity" class="input">
+                <option value="cozy" selected>Cozy</option>
+                <option value="compact">Compact</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="uiChatWidth">Chat width</label>
+              <select id="uiChatWidth" class="input">
+                <option value="comfortable" selected>Comfortable</option>
+                <option value="wide">Wide</option>
+                <option value="full">Full</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="uiCodeWrap">Code blocks</label>
+              <select id="uiCodeWrap" class="input">
+                <option value="nowrap" selected>No wrap</option>
+                <option value="wrap">Wrap long lines</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="uiReduceMotion" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Reduce motion</div>
+              <div class="settingDesc">Less animation, more focus.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chat -->
+      <section class="settingsPanel hidden" data-settings-panel="chat">
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Chat behavior</div>
+            <div class="cardHint">Control what shows up + how it behaves.</div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="chatShowTimestamps" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Show timestamps</div>
+              <div class="settingDesc">Adds times next to messages.</div>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="chatAutoScroll" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Auto-scroll while generating</div>
+              <div class="settingDesc">Stays pinned to the newest message.</div>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="chatRenderMarkdown" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Render Markdown</div>
+              <div class="settingDesc">Code blocks + formatting.</div>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="chatInlineSources" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Show sources inline</div>
+              <div class="settingDesc">RAG sources appear under responses.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Composer</div>
+            <div class="cardHint">How sending works.</div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="sendKey">Send key</label>
+              <select id="sendKey" class="input">
+                <option value="ctrlenter" selected>Ctrl+Enter</option>
+                <option value="enter">Enter (Shift+Enter newline)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="slashBehavior">Slash palette</label>
+              <select id="slashBehavior" class="input">
+                <option value="on" selected>Enabled</option>
+                <option value="off">Disabled</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="confirmClearChat" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Confirm before clearing a chat</div>
+              <div class="settingDesc">Prevents "oops".</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Model -->
+      <section class="settingsPanel hidden" data-settings-panel="model">
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Personality</div>
+            <div class="cardHint">This affects the assistant's behavior for *this app*.</div>
+          </div>
+
+          <div class="field">
+            <label for="systemPrompt">System prompt</label>
+            <textarea id="systemPrompt" class="input textarea" rows="4" placeholder="Optional system prompt…"></textarea>
+          </div>
+        </div>
+
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Generation</div>
+            <div class="cardHint">Performance vs creativity.</div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="temperature">Temperature</label>
+              <input id="temperature" class="input" type="number" step="0.05" min="0" max="2" />
+            </div>
+
+            <div class="field">
+              <label for="numCtx">Context (num_ctx)</label>
+              <input id="numCtx" class="input" type="number" step="256" min="256" />
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="keepAlive">Keep-alive</label>
+              <input id="keepAlive" class="input" type="text" placeholder="e.g., 0 / 5m / 1h" />
+              <div class="help">0 disables keep-alive.</div>
+            </div>
+
+            <div class="field">
+              <label for="topK">Top-K (RAG)</label>
+              <input id="topK" class="input" type="number" step="1" min="1" />
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="ragToggle" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Enable RAG</div>
+              <div class="settingDesc">Retrieve from docs for better answers.</div>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="mmrToggle" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">MMR re-rank</div>
+              <div class="settingDesc">Better diversity, fewer duplicates.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy -->
+      <section class="settingsPanel hidden" data-settings-panel="privacy">
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Local data</div>
+            <div class="cardHint">This is just your browser storage.</div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="persistChats" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Save chats locally</div>
+              <div class="settingDesc">Keeps state between reloads.</div>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="persistSettings" type="checkbox" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Save settings locally</div>
+              <div class="settingDesc">Your preferences persist.</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <button id="btnExportAllChats" class="btn">Export all chats</button>
+            <button id="btnWipeLocal" class="btn danger">Wipe local data</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="settingsFooter">
+      <div class="settingsGlow"></div>
+      <button id="btnResetSettings" class="btn">Reset</button>
+      <button id="btnSaveSettings" class="btn primary">Save</button>
+
+      <!-- Keep legacy container in DOM if anything queries it -->
+      <div id="panelSettings" class="hidden" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

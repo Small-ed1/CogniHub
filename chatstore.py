@@ -57,6 +57,9 @@ def init_db():
         if v < 6:
             _migrate_6_autosummary(con)
             _set_user_version(con, 6); v = 6
+        if v < 7:
+            _migrate_7_token_count(con)
+            _set_user_version(con, 7); v = 7
 
 def _migrate_1_baseline(con: sqlite3.Connection):
     con.execute("""
@@ -192,6 +195,11 @@ def _migrate_5_tags_and_settings(con: sqlite3.Connection):
     );
     """)
 
+def _migrate_7_token_count(con: sqlite3.Connection):
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(messages);").fetchall()}
+    if "token_count" not in cols:
+        con.execute("ALTER TABLE messages ADD COLUMN token_count INTEGER DEFAULT 0;")
+
 def _migrate_6_autosummary(con: sqlite3.Connection):
     cols = {r["name"] for r in con.execute("PRAGMA table_info(chat_settings);").fetchall()}
     if "autosummary_enabled" not in cols:
@@ -312,7 +320,7 @@ def get_chat(chat_id: str, limit: int = 2000, offset: int = 0) -> dict[str, Any]
             raise KeyError("chat not found")
 
         cur = con.execute("""
-          SELECT id, role, content, created_at, model, meta_json
+          SELECT id, role, content, created_at, model, meta_json, token_count
             FROM messages
            WHERE chat_id=?
            ORDER BY created_at ASC, id ASC
@@ -382,10 +390,11 @@ def append_messages(chat_id: str, items: list[dict[str, Any]]):
             msg_ts = _now()
             model = it.get("model")
             meta = _normalize_meta(it.get("meta_json"))
+            token_count = len(content.split())  # Simple token count
 
             cur = con.execute(
-                "INSERT INTO messages(chat_id,role,content,created_at,model,meta_json) VALUES(?,?,?,?,?,?)",
-                (chat_id, role, content, msg_ts, model, meta),
+                "INSERT INTO messages(chat_id,role,content,created_at,model,meta_json,token_count) VALUES(?,?,?,?,?,?,?)",
+                (chat_id, role, content, msg_ts, model, meta, token_count),
             )
             last_id = int(cur.lastrowid) if cur.lastrowid is not None else None
             wrote_any = True

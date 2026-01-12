@@ -28,6 +28,57 @@ const slashPalette = el("slashPalette");
 
 const prismThemeLink = el("prismTheme");
 
+const PRISM_THEMES = {
+  dark: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css",
+  light: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css",
+};
+
+function applyTheme(theme, persist = true) {
+  state.theme = (theme === "light") ? "light" : "dark";
+  document.documentElement.dataset.theme = state.theme;
+  if (prismThemeLink && PRISM_THEMES[state.theme]) prismThemeLink.href = PRISM_THEMES[state.theme];
+  if (persist) saveState();
+}
+
+function toggleTheme() {
+  applyTheme(state.theme === "light" ? "dark" : "light");
+}
+
+const btnSettings = el("btnSettings");
+const btnSettingsClose = el("btnSettingsClose");
+const settingsOverlay = el("settingsOverlay");
+const settingsModal = el("settingsModal");
+
+function openSettings(){
+  settingsOverlay.classList.remove("hidden");
+  settingsModal.classList.remove("hidden");
+}
+function closeSettings(){
+  settingsOverlay.classList.add("hidden");
+  settingsModal.classList.add("hidden");
+}
+
+btnSettings?.addEventListener("click", openSettings);
+btnSettingsClose?.addEventListener("click", closeSettings);
+settingsOverlay?.addEventListener("click", closeSettings);
+
+document.addEventListener("keydown", (e)=>{
+  if(e.key==="Escape") closeSettings();
+});
+
+document.querySelectorAll(".settingsTab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".settingsTab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const key = btn.getAttribute("data-settings-tab");
+    document.querySelectorAll(".settingsPanel").forEach(p=>{
+      p.classList.toggle("hidden", p.getAttribute("data-settings-panel") !== key);
+    });
+  });
+});
+
+
 const ragToggle = el("ragToggle");
 const topKEl = el("topK");
 const mmrToggle = el("mmrToggle");
@@ -167,17 +218,33 @@ function renderLiteMarkdown(text) {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ model: state.model, settings: state.settings }));
+  const ui = {
+    auto_model: !!autoModelToggle?.checked,
+    preset: presetSelect?.value || ""
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    model: state.model,
+    theme: state.theme,
+    settings: state.settings,
+    ui,
+    lastResearchRunId: state.lastResearchRunId || null
+  }));
 }
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") {
-      state.model = obj.model || state.model;
-      state.settings = { ...state.settings, ...(obj.settings || {}) };
-    }
+    if (!obj || typeof obj !== "object") return;
+
+    state.model = obj.model || state.model;
+    state.theme = obj.theme || state.theme;
+    state.settings = { ...state.settings, ...(obj.settings || {}) };
+    state.lastResearchRunId = obj.lastResearchRunId || state.lastResearchRunId || null;
+
+    const ui = obj.ui || {};
+    if (autoModelToggle && typeof ui.auto_model === "boolean") autoModelToggle.checked = ui.auto_model;
+    if (presetSelect && typeof ui.preset === "string") presetSelect.value = ui.preset;
   } catch {}
 }
 
@@ -194,31 +261,46 @@ function showError(message, action = null, callback = null) {
 
   const banner = document.createElement("div");
   banner.className = "error-banner";
-  banner.innerHTML = `
-    <div class="error-content">
-      <span class="error-icon">⚠️</span>
-      <span class="error-message">${message}</span>
-      ${action ? `<button class="error-action btn">${action}</button>` : ''}
-      <button class="error-close iconbtn">✕</button>
-    </div>
-  `;
 
+  const content = document.createElement("div");
+  content.className = "error-content";
+
+  const icon = document.createElement("span");
+  icon.className = "error-icon";
+  icon.textContent = "⚠️";
+
+  const msg = document.createElement("span");
+  msg.className = "error-message";
+  msg.textContent = String(message || "Error");
+
+  content.append(icon, msg);
+
+  if (action) {
+    const actionBtn = document.createElement("button");
+    actionBtn.className = "error-action btn";
+    actionBtn.type = "button";
+    actionBtn.textContent = action;
+    actionBtn.addEventListener("click", () => {
+      banner.remove();
+      callback?.();
+    });
+    content.appendChild(actionBtn);
+  }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "error-close iconbtn";
+  closeBtn.type = "button";
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", () => banner.remove());
+
+  content.appendChild(closeBtn);
+  banner.appendChild(content);
   document.body.appendChild(banner);
 
   // Auto-hide after 8 seconds
   setTimeout(() => {
     if (banner.parentNode) banner.remove();
   }, 8000);
-
-  // Event listeners
-  const closeBtn = banner.querySelector(".error-close");
-  const actionBtn = banner.querySelector(".error-action");
-
-  closeBtn?.addEventListener("click", () => banner.remove());
-  actionBtn?.addEventListener("click", () => {
-    banner.remove();
-    if (callback) callback();
-  });
 }
 
 let slashCommands = [];
@@ -364,6 +446,15 @@ scrollToBottomBtn?.addEventListener("click", () => {
   updateScrollButton();
 });
 
+chatEl?.addEventListener("click", async (e) => {
+  const a = e.target.closest?.("[data-chunk]");
+  if (!a) return;
+  e.preventDefault();
+  const cid = Number(a.getAttribute("data-chunk"));
+  if (!cid) return;
+  await openSourceModal(cid);
+});
+
 chatEl?.addEventListener("scroll", () => {
   if (isNearBottom()) {
     newMessagesCount = 0;
@@ -399,6 +490,13 @@ slashPalette.addEventListener("mousedown", (e) => {
 
 // keyboard nav
 promptEl.addEventListener("keydown", (e) => {
+  // Ctrl/Cmd+Enter sends (matches placeholder)
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    e.preventDefault();
+    send();
+    return;
+  }
+
   if (!slashOpen) return;
   const list = buildSlashList((promptEl.value || "").slice(1));
 
@@ -967,6 +1065,9 @@ function renderChat() {
   if (state.searchHighlight) {
     searchInChat(state.searchHighlight);
   }
+
+  // Prism highlight (if loaded)
+  try { if (window.Prism?.highlightAllUnder) window.Prism.highlightAllUnder(chatEl); } catch {}
 }
 
 /* ---------------- modal ---------------- */
@@ -1466,7 +1567,9 @@ async function send() {
      if (!res.ok) {
        const errorData = await res.json().catch(() => ({}));
        const errorMsg = errorData.detail || errorData.error || `HTTP ${res.status}`;
-       showError(`Failed to send message: ${errorMsg}`, "retry", () => send());
+       promptEl.value = originalText;
+       autoGrow();
+       showError(`Failed to send message: ${errorMsg}`, "retry", () => { promptEl.value = originalText; autoGrow(); send(); });
        return;
      }
 
@@ -1572,7 +1675,9 @@ async function send() {
        const errorMsg = `Request failed: ${e}`;
        assistant.content = errorMsg;
        assistant.meta = { ...(assistant.meta || {}), error: String(e), sources: lastSources };
-       showError(errorMsg, "retry", () => send());
+       promptEl.value = originalText;
+       autoGrow();
+       showError(errorMsg, "retry", () => { promptEl.value = originalText; autoGrow(); send(); });
      }
      if (liveBody) liveBody.innerHTML = renderLiteMarkdown(assistant.content);
      saveState();
@@ -1710,7 +1815,7 @@ function toggleExportMenu() {
 
 function hideExportMenu() {
   const menu = document.querySelector(".export-menu");
-  if (menu) menu.classList.add("hidden");
+  if (!menu) menu.classList.add("hidden");
 }
 
 async function exportChat(format) {
@@ -1756,6 +1861,7 @@ async function exportChat(format) {
 
 (async function init(){
   loadState();
+  applyTheme(state.theme, false);
   initPresets();
   applySettingsToUI();
 
@@ -1787,15 +1893,10 @@ async function exportChat(format) {
   });
 
   updateRagSummary();
-
   // Theme toggle
   btnTheme?.addEventListener("click", () => {
-    const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
-    const newTheme = currentTheme === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", newTheme);
-    state.theme = newTheme;
-    saveState();
-    setStatus(true, `Switched to ${newTheme} theme`);
+    toggleTheme();
+    setStatus(true, `Switched to ${state.theme} theme`);
   });
 
   // Load slash commands and initialize command palette
