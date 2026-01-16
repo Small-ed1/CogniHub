@@ -4,30 +4,104 @@ Essential information for agentic coding agents working in this repository.
 
 ## Build, Lint, and Test Commands
 
+### Development Setup
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
+# Install in development mode (if editable package)
+pip install -e .
+
 # Run development server (FastAPI + Uvicorn)
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
-# Run TUI
-python3 router_tui.py
-
-# Type checking (if mypy is available)
-mypy app.py --ignore-missing-imports
-
-# Manual testing
-curl http://localhost:8000/health
-curl http://localhost:8000/api/status
+# Run with custom config
+OLLAMA_URL=http://localhost:11434 uvicorn app:app --reload
 ```
 
-**Note:** This codebase does not have automated tests or linting configured. Tests exist only in backup/ directory. When adding features, manually test endpoints.
+### Testing
+```bash
+# Run single test file
+python -m pytest backup/tests/test_database.py -v
+
+# Run all tests (from backup directory)
+cd backup && python -m pytest tests/ -v
+
+# Run tests with coverage
+python -m pytest backup/tests/ --cov=agent --cov-report=html
+
+# Run integration tests
+python backup/test_integration.py
+
+# Run component tests
+python backup/test_components.py
+
+# Manual endpoint testing
+curl http://localhost:8000/health
+curl http://localhost:8000/api/status
+curl http://localhost:8000/api/models
+```
+
+### Linting and Code Quality
+```bash
+# Type checking (if mypy available)
+mypy app.py --ignore-missing-imports
+mypy *.py --ignore-missing-imports
+
+# Basic syntax check
+python -m py_compile app.py chatstore.py ragstore.py webstore.py researchstore.py
+
+# Import validation
+python -c "import app, chatstore, ragstore, webstore, researchstore; print('All imports successful')"
+```
+
+### Production Deployment
+```bash
+# Install systemd services for auto-start at boot
+sudo cp systemd/cognihub.service /etc/systemd/system/
+sudo cp systemd/kiwix.service /etc/systemd/system/
+sudo cp kiwix-serve-sdc.sh /usr/local/bin/kiwix-serve-sdc.sh
+sudo chmod +x /usr/local/bin/kiwix-serve-sdc.sh
+sudo systemctl daemon-reload
+sudo systemctl enable cognihub kiwix
+sudo systemctl start cognihub kiwix
+
+# Check service status
+sudo systemctl status cognihub
+sudo systemctl status kiwix
+
+# Run TUI
+python3 router_tui.py
+```
 
 ## Service Endpoints
 
+- **Showcase/Home Page**: http://localhost:8000
+- **Full Dashboard**: http://localhost:8000/dashboard
 - **Backend API**: http://localhost:8000
 - **Ollama API**: http://localhost:11434 (must be running separately)
+- **Kiwix API**: http://localhost:8080 (must be running separately)
+
+## Database Management
+
+### SQLite Database Files
+- `chat.sqlite3` - Chat conversations and messages
+- `rag.sqlite3` - Document storage and embeddings
+- `web.sqlite3` - Web page cache and chunks
+- `research.sqlite3` - Research runs and traces
+
+### Database Operations
+```bash
+# Check database integrity
+sqlite3 chat.sqlite3 "PRAGMA integrity_check;"
+
+# Vacuum databases (reclaim space)
+sqlite3 chat.sqlite3 "VACUUM;"
+sqlite3 rag.sqlite3 "VACUUM;"
+
+# Show database schema
+sqlite3 chat.sqlite3 ".schema"
+```
 
 ## Code Style Guidelines
 
@@ -70,6 +144,33 @@ async def api_get_chat(chat_id: str):
         return chatstore.get_chat(chat_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
+```
+
+#### Async/Await Patterns
+```python
+# Lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Setup code
+    ragstore.init_db()
+    _http = httpx.AsyncClient(timeout=None)
+    try:
+        yield
+    finally:
+        # Cleanup code
+        if _http:
+            await _http.aclose()
+
+# Retry pattern for network calls
+async def _retry(coro_factory, tries: int = 3, base_delay: float = 0.4):
+    last = None
+    for i in range(tries):
+        try:
+            return await coro_factory()
+        except Exception as e:
+            last = e
+            await asyncio.sleep(base_delay * (2 ** i))
+    raise last
 ```
 
 #### Naming Conventions
@@ -131,11 +232,17 @@ Follow backend Python conventions. Use textual for TUI components.
 ├── webstore.py            # Web page scraping
 ├── researchstore.py       # Deep research runs
 ├── router_tui.py          # Terminal User Interface
+├── config.py              # Configuration management
 ├── requirements.txt        # Python dependencies
 ├── static/
 │   ├── index.html         # Main web UI
-│   └── app.js            # Frontend JavaScript
-└── *.sqlite3             # SQLite databases
+│   ├── app.js            # Frontend JavaScript
+│   └── styles.css        # Frontend styles
+├── systemd/              # Systemd service files
+├── scripts/              # Utility scripts
+├── docs/                 # Documentation files
+├── data/                 # SQLite databases directory
+└── *.sqlite3             # SQLite databases (legacy location)
 ```
 
 ## Environment Variables
@@ -148,12 +255,58 @@ API_BASE="http://127.0.0.1:8000"
 RAG_DB="rag.sqlite3"
 CHAT_DB="chat.sqlite3"
 MAX_UPLOAD_BYTES=10485760"
+KIWIX_URL="http://127.0.0.1:8080"  # Kiwix server URL
 
 # Web scraping SSRF protection
 WEB_ALLOWED_HOSTS=""        # Comma-separated whitelist (empty = any public domain)
 WEB_BLOCKED_HOSTS=""        # Comma-separated blacklist
 WEB_UA="Mozilla/5.0..."  # Custom User-Agent for requests
+
+# Research model configuration
+DECIDER_MODEL=""            # Model for deciding which chat model to use
+RESEARCH_PLANNER_MODEL=""   # Model for planning research queries
+RESEARCH_VERIFIER_MODEL=""  # Model for verifying research claims
+RESEARCH_SYNTH_MODEL=""     # Model for synthesizing research results
 ```
+
+## Development Workflow
+
+### Before Committing Changes
+```bash
+# Run type checking
+mypy app.py --ignore-missing-imports
+
+# Run syntax checks
+python -m py_compile app.py chatstore.py ragstore.py webstore.py researchstore.py
+
+# Test imports
+python -c "import app, chatstore, ragstore, webstore, researchstore; print('All imports successful')"
+```
+
+### Common Development Tasks
+```bash
+# Add a new database migration
+# Edit the init_db() function in the relevant store module
+# Add migration logic with version checks
+
+# Add new API endpoint
+# Add route to app.py following existing patterns
+# Add Pydantic models for requests/responses
+# Implement business logic in appropriate store module
+
+# Update frontend
+# Edit static/index.html for structure
+# Edit static/app.js for functionality
+# Edit static/styles.css for styling
+```
+
+## Security Considerations
+
+- **API Key Protection**: Use `API_KEY` environment variable for endpoint protection
+- **File Upload Limits**: Respect `MAX_UPLOAD_BYTES` configuration
+- **Web Scraping**: Configure `WEB_ALLOWED_HOSTS` and `WEB_BLOCKED_HOSTS` for SSRF protection
+- **Database Safety**: Always use parameterized queries, never string interpolation
+- **Input Validation**: Validate all user inputs through Pydantic models
 
 ## Notes
 

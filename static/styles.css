@@ -1042,7 +1042,7 @@ body::after{
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
   border-radius: 0 0 22px 22px;
-  overflow: hidden;
+  overflow: visible;
 }
 .settingsGlow{
   position:absolute;

@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import os, json, re, time, asyncio, logging
-from typing import Optional, Any
+from typing import Optional, Any, cast, Dict
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse, parse_qs, unquote
-from collections import OrderedDict
-from bs4 import BeautifulSoup, FeatureNotFound
-import uuid
 
 import httpx
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse, PlainTextResponse, JSONResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from bs4 import BeautifulSoup
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict
 
-import config
-import ragstore
-import chatstore
-import researchstore
-import webstore
+from . import config
+from .stores import ragstore
+from .stores import chatstore
+from .stores import researchstore
+from .stores import webstore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,12 +32,8 @@ MAX_UPLOAD_BYTES = config.config.max_upload_bytes
 _http: httpx.AsyncClient | None = None
 
 # Simple in-memory cache
-_CACHE_MAX = int(os.getenv("CACHE_MAX", "256"))
-_cache: "OrderedDict[str, tuple[Any, float]]" = OrderedDict()
+_cache = {}
 _cache_lock = asyncio.Lock()
-
-_research_tasks: dict[str, asyncio.Task] = {}
-_research_tasks_lock = asyncio.Lock()
 
 SLASH_COMMANDS = [
     {"cmd": "/help",    "args": "",           "desc": "Show all commands"},
@@ -88,68 +81,6 @@ def _sanitize_filename(filename: str | None) -> str:
         filename = filename + ".txt"
     return filename
 
-def _ddg_unwrap(href: str) -> str | None:
-    if not href:
-        return None
-
-    href = href.strip()
-
-    # normalize scheme-relative URLs
-    if href.startswith("//"):
-        href = "https:" + href
-
-    # normalize DDG relative redirect links
-    if href.startswith("/"):
-        href = "https://duckduckgo.com" + href
-
-    u = urlparse(href)
-
-    # DDG redirect: https://duckduckgo.com/l/?uddg=<encoded>
-    if u.netloc.endswith("duckduckgo.com") and u.path.startswith("/l/"):
-        qs = parse_qs(u.query)
-        uddg = qs.get("uddg", [None])[0]
-        if uddg:
-            real = unquote(uddg)
-            if real.startswith("http"):
-                return real
-        return None
-
-    return href if href.startswith("http") else None
-
-
-async def _retry(coro_factory, tries: int = 3, base_delay: float = 0.4):
-    last = None
-    for i in range(tries):
-        try:
-            return await coro_factory()
-        except Exception as e:
-            last = e
-            await asyncio.sleep(base_delay * (2 ** i))
-    raise last
-
-def _merge_existing_source_flags(run_id: str | None, sources_meta: list[dict]) -> list[dict]:
-    if not run_id:
-        return sources_meta
-
-    try:
-        existing = researchstore.get_sources(run_id) or []
-    except Exception:
-        existing = []
-
-    by_ref = {str(s.get("ref_id")): s for s in existing if s.get("ref_id")}
-    for s in sources_meta:
-        ref = str(s.get("ref_id"))
-        old = by_ref.get(ref)
-        if not old:
-            continue
-        # copy flags forward
-        if "pinned" in old:
-            s["pinned"] = old.get("pinned")
-        if "excluded" in old:
-            s["excluded"] = old.get("excluded")
-
-    return sources_meta
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http
@@ -165,77 +96,43 @@ async def lifespan(app: FastAPI):
             await _http.aclose()
             _http = None
 
-API_KEY = os.getenv("API_KEY")  # if unset -> disabled
-
-app = FastAPI(
-    title="CogniHub",
-    description="Local-first chat + RAG",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-@app.middleware("http")
-async def request_context_and_auth(request: Request, call_next):
-    rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
-    request.state.request_id = rid
-
-    # Simple API key gate (only /api + /health)
-    if API_KEY and (request.url.path.startswith("/api/") or request.url.path == "/health"):
-        got = request.headers.get("x-api-key") or request.query_params.get("api_key")
-        if got != API_KEY:
-            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-
-    t0 = time.time()
-    try:
-        resp = await call_next(request)
-    finally:
-        dt = (time.time() - t0) * 1000.0
-        logger.info(f"[{rid}] {request.method} {request.url.path} {dt:.1f}ms")
-
-    resp.headers["x-request-id"] = rid
-    return resp
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app = FastAPI(lifespan=lifespan)
+static_dir = os.path.join(os.path.dirname(__file__), "../web/static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/")
 async def root():
-    return FileResponse("static/showcase.html")
-
-@app.get("/dashboard")
-async def dashboard():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(os.path.dirname(__file__), "../web/static/index.html"))
 
 @app.get("/health")
 async def health():
+    import psutil
     import platform
 
-    sysinfo: dict[str, Any] = {
-        "platform": platform.system(),
-    }
-
     try:
-        import psutil  # type: ignore
+        # System metrics
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
 
-        sysinfo.update({
-            "cpu_percent": cpu_percent,
-            "memory_percent": memory.percent,
-            "memory_used_gb": round(memory.used / (1024**3), 2),
-            "memory_total_gb": round(memory.total / (1024**3), 2),
-            "disk_percent": disk.percent,
-            "disk_free_gb": round(disk.free / (1024**3), 2),
-        })
+        return {
+            "ok": True,
+            "timestamp": _now(),
+            "system": {
+                "platform": platform.system(),
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory.percent,
+                "memory_used_gb": round(memory.used / (1024**3), 2),
+                "memory_total_gb": round(memory.total / (1024**3), 2),
+                "disk_percent": disk.percent,
+                "disk_free_gb": round(disk.free / (1024**3), 2),
+            },
+            "services": {
+                "ollama": await api_status(),
+            }
+        }
     except Exception as e:
-        sysinfo["metrics_error"] = str(e)
-
-    return {
-        "ok": True,
-        "timestamp": _now(),
-        "system": sysinfo,
-        "services": {"ollama": await api_status()},
-    }
+        return {"ok": False, "error": str(e)}
 
 @app.get("/api/slash_commands")
 async def api_slash_commands():
@@ -249,7 +146,7 @@ async def api_status():
     async def fetch_status():
         try:
             v = await _http.get(f"{OLLAMA_URL}/api/version", timeout=2.5)
-            ver = v.json().get("version")
+            ver = cast(Dict, v.json()).get("version")
             return {"ok": True, "version": ver}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -297,26 +194,36 @@ async def docs_patch(doc_id: int, req: DocPatchReq):
 
 @app.post("/api/docs/upload")
 async def docs_upload(file: UploadFile = File(...)):
-    raw = await file.read(MAX_UPLOAD_BYTES + 1)
-    total = len(raw)
-
+    total = 0
+    chunk_size = 8192
+    chunks = []
+    
+    while total < MAX_UPLOAD_BYTES:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            chunks = chunks[:-1]
+            total -= len(chunk)
+            logger.warning(f"File upload too large: {total} bytes (max {MAX_UPLOAD_BYTES})")
+            raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES} bytes)")
+    
     if total == 0:
         logger.warning("Empty file upload attempt")
         raise HTTPException(status_code=400, detail="Empty file")
-
-    if total > MAX_UPLOAD_BYTES:
-        logger.warning(f"File upload too large: {total} bytes (max {MAX_UPLOAD_BYTES})")
-        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES} bytes)")
-
+    
+    raw = b"".join(chunks)
     try:
         text = raw.decode("utf-8")
     except Exception:
         text = raw.decode("utf-8", errors="ignore")
-
+    
     if not text.strip():
         logger.warning("File contains no readable text")
         raise HTTPException(status_code=400, detail="No readable text")
-
+    
     safe_filename = _sanitize_filename(file.filename)
     logger.info(f"Uploading document: {safe_filename} ({total} bytes)")
     doc_id = await ragstore.add_document(safe_filename, text)
@@ -367,12 +274,9 @@ async def api_create_chat(req: ChatCreateReq):
 
 @app.get("/api/chats/{chat_id}")
 async def api_get_chat(chat_id: str, limit: int = 2000, offset: int = 0):
-    try:
-        limit = max(1, min(limit, 5000))
-        offset = max(0, offset)
-        return chatstore.get_chat(chat_id, limit=limit, offset=offset)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="chat not found")
+    limit = max(1, min(limit, 5000))
+    offset = max(0, offset)
+    return chatstore.get_chat(chat_id, limit=limit, offset=offset)
 
 @app.patch("/api/chats/{chat_id}")
 async def api_patch_chat(chat_id: str, req: ChatPatchReq):
@@ -1039,178 +943,6 @@ def _format_sources_for_prompt(doc_hits: list[dict], web_hits: list[dict]) -> tu
 
     return sources_meta, context_lines
 
-async def _run_research_pipeline(run_id: str, req: ResearchReq) -> dict:
-    query = (req.query or "").strip()
-    planner_model = req.planner_model or os.getenv("RESEARCH_PLANNER_MODEL") or os.getenv("DEFAULT_CHAT_MODEL") or "llama3.1"
-    verifier_model = req.verifier_model or os.getenv("RESEARCH_VERIFIER_MODEL") or planner_model
-    synth_model = req.synth_model or os.getenv("RESEARCH_SYNTH_MODEL") or planner_model
-
-    try:
-        plan = await _plan_queries(planner_model, query)
-        researchstore.add_trace(run_id, "plan", plan)
-
-        rounds = max(1, min(int(req.rounds), 6))
-        pages_per_round = max(1, min(int(req.pages_per_round), 12))
-
-        all_doc_hits: list[dict] = []
-        all_web_hits: list[dict] = []
-        seen_urls: set[str] = set()
-
-        embed_model = req.embed_model or DEFAULT_EMBED_MODEL
-
-        for rno in range(1, rounds + 1):
-            researchstore.add_trace(run_id, "round_begin", {"round": rno})
-
-            if req.use_docs:
-                doc_queries = plan.get("doc_queries") or plan.get("subquestions") or [query]
-                doc_queries = [str(x) for x in doc_queries if str(x).strip()][:6]
-                doc_round_hits = []
-                for dq in doc_queries:
-                    hits = await ragstore.retrieve(
-                        dq,
-                        top_k=int(req.doc_top_k),
-                        doc_ids=None,
-                        embed_model=embed_model,
-                        use_mmr=False,
-                        mmr_lambda=0.75,
-                    )
-                    doc_round_hits.extend(hits or [])
-                uniq = {}
-                for h in doc_round_hits:
-                    uniq[int(h["chunk_id"])] = h
-                doc_round_hits = list(uniq.values())
-                doc_round_hits.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-                all_doc_hits.extend(doc_round_hits[: int(req.doc_top_k)])
-
-                researchstore.add_trace(run_id, "docs_retrieve", {"queries": doc_queries, "hits": len(doc_round_hits)})
-
-            if req.use_web:
-                web_queries = plan.get("web_queries") or plan.get("subquestions") or [query]
-                web_queries = [str(x) for x in web_queries if str(x).strip()][:6]
-
-                async def ddg_search(q: str, n: int = 8) -> list[str]:
-                    if not _http:
-                        raise HTTPException(status_code=503, detail="client not initialized")
-
-                    url = "https://duckduckgo.com/html/"
-                    headers = {
-                        "User-Agent": os.getenv(
-                            "WEB_UA",
-                            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari"
-                        ),
-                        "Accept-Language": "en-US,en;q=0.9",
-                    }
-
-                    async def _do():
-                        r = await _http.post(url, data={"q": q}, headers=headers, timeout=15.0)
-                        r.raise_for_status()
-
-                        try:
-                            soup = BeautifulSoup(r.text, "lxml")
-                        except FeatureNotFound:
-                            soup = BeautifulSoup(r.text, "html.parser")
-
-                        links: list[str] = []
-                        for a in soup.select("a.result__a"):
-                            href = str(a.get("href", ""))
-                            real = _ddg_unwrap(href)
-                            if real and not webstore._is_blocked_url(real):
-                                links.append(real)
-                            if len(links) >= n:
-                                break
-                        return links
-
-                    return await _retry(_do, tries=3, base_delay=0.5)
-
-                urls = []
-                urls_per_query = max(1, pages_per_round // len(web_queries)) if web_queries else pages_per_round
-                search_tasks = [ddg_search(wq, n=urls_per_query) for wq in web_queries]
-                search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
-                
-                for wq, result in zip(web_queries, search_results):
-                    if isinstance(result, Exception):
-                        researchstore.add_trace(run_id, "web_search_error", {"query": wq, "error": str(result)})
-                    elif result:
-                        urls.extend(result)
-
-                cleaned_urls = []
-                for u in urls:
-                    if u in seen_urls:
-                        continue
-                    seen_urls.add(u)
-                    cleaned_urls.append(u)
-                    if len(cleaned_urls) >= pages_per_round:
-                        break
-
-                researchstore.add_trace(run_id, "web_search", {"queries": web_queries, "urls": cleaned_urls})
-
-                for u in cleaned_urls:
-                    try:
-                        page = await webstore.upsert_page_from_url(u, force=False)
-                        researchstore.add_trace(run_id, "web_upsert", {"url": u, "page_id": page.get("id"), "title": page.get("title")})
-                    except Exception as e:
-                        researchstore.add_trace(run_id, "web_upsert_error", {"url": u, "error": str(e)})
-
-                web_round_hits = []
-                for wq in web_queries:
-                    try:
-                        hits = await webstore.retrieve(
-                            wq,
-                            top_k=int(req.web_top_k),
-                            domain_whitelist=req.domain_whitelist,
-                            embed_model=embed_model,
-                        )
-                        web_round_hits.extend(hits or [])
-                    except Exception as e:
-                        researchstore.add_trace(run_id, "web_retrieve_error", {"query": wq, "error": str(e)})
-                
-                web_uniq = {}
-                for h in web_round_hits:
-                    web_uniq[int(h["chunk_id"])] = h
-                web_round_hits = list(web_uniq.values())
-                web_round_hits.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-                all_web_hits.extend(web_round_hits[: int(req.web_top_k)])
-                researchstore.add_trace(run_id, "web_retrieve", {"hits": len(web_round_hits)})
-
-            doc_uniq = {}
-            for h in all_doc_hits:
-                doc_uniq[int(h["chunk_id"])] = h
-            web_uniq = {}
-            for h in all_web_hits:
-                web_uniq[int(h["chunk_id"])] = h
-
-            doc_hits = sorted(doc_uniq.values(), key=lambda x: x.get("score", 0.0), reverse=True)[: int(req.doc_top_k)]
-            web_hits = sorted(web_uniq.values(), key=lambda x: x.get("score", 0.0), reverse=True)[: int(req.web_top_k)]
-
-            sources_meta, context_lines = _format_sources_for_prompt(doc_hits, web_hits)
-
-            sources_meta = _merge_existing_source_flags(req.chat_id and run_id, sources_meta)
-
-            researchstore.clear_sources(run_id)
-            researchstore.add_sources(run_id, sources_meta)
-
-            verify = await _verify_claims(verifier_model, query, context_lines)
-            researchstore.clear_claims(run_id)
-            researchstore.add_claims(run_id, verify["claims"])
-            researchstore.add_trace(run_id, "verify", {"claims": len(verify["claims"])})
-
-            supported = sum(1 for c in verify["claims"] if (c.get("status") == "supported"))
-            unclear = sum(1 for c in verify["claims"] if (c.get("status") != "supported"))
-            researchstore.add_trace(run_id, "round_end", {"round": rno, "supported": supported, "other": unclear})
-
-            if supported >= 6:
-                break
-
-        final = await _synthesize(synth_model, query, context_lines, verify["claims"])
-        researchstore.set_run_done(run_id, final)
-        researchstore.add_trace(run_id, "done", {"len": len(final)})
-
-        return {"ok": True, "run_id": run_id, "answer": final}
-    except Exception as e:
-        researchstore.set_run_error(run_id, str(e))
-        researchstore.add_trace(run_id, "error", {"error": str(e)})
-        raise HTTPException(status_code=500, detail=str(e))
-
 async def _plan_queries(planner_model: str, query: str) -> dict:
     prompt = (
         "Return ONLY JSON.\n"
@@ -1223,7 +955,7 @@ async def _plan_queries(planner_model: str, query: str) -> dict:
         f"User query:\n{query}\n"
     )
     out = await _ollama_chat_once(planner_model, [{"role":"user","content":prompt}], timeout=45.0)
-    obj = _json_obj_from_text(out) or {}
+    obj = cast(Dict, _json_obj_from_text(out) or {})
     sq = obj.get("subquestions") if isinstance(obj.get("subquestions"), list) else []
     wq = obj.get("web_queries") if isinstance(obj.get("web_queries"), list) else []
     dq = obj.get("doc_queries") if isinstance(obj.get("doc_queries"), list) else []
@@ -1278,11 +1010,162 @@ async def api_research_run(req: ResearchReq):
     if not query:
         raise HTTPException(status_code=400, detail="query required")
 
+    planner_model = req.planner_model or os.getenv("RESEARCH_PLANNER_MODEL") or os.getenv("DEFAULT_CHAT_MODEL") or "llama3.1"
+    verifier_model = req.verifier_model or os.getenv("RESEARCH_VERIFIER_MODEL") or planner_model
+    synth_model = req.synth_model or os.getenv("RESEARCH_SYNTH_MODEL") or planner_model
+
     settings = req.model_dump(exclude_none=True)
     run_id = researchstore.create_run(req.chat_id, query, req.mode, settings)
     researchstore.add_trace(run_id, "start", {"query": query, "settings": settings})
 
-    return await _run_research_pipeline(run_id, req)
+    try:
+        plan = await _plan_queries(planner_model, query)
+        researchstore.add_trace(run_id, "plan", plan)
+
+        rounds = max(1, min(int(req.rounds), 6))
+        pages_per_round = max(1, min(int(req.pages_per_round), 12))
+
+        all_doc_hits: list[dict] = []
+        all_web_hits: list[dict] = []
+        seen_urls: set[str] = set()
+        context_lines = []
+        verify = {"claims": []}
+
+        embed_model = req.embed_model or DEFAULT_EMBED_MODEL
+
+        for rno in range(1, rounds + 1):
+            researchstore.add_trace(run_id, "round_begin", {"round": rno})
+
+            if req.use_docs:
+                doc_queries = plan.get("doc_queries") or plan.get("subquestions") or [query]
+                doc_queries = [str(x) for x in doc_queries if str(x).strip()][:6]
+                doc_round_hits = []
+                for dq in doc_queries:
+                    hits = await ragstore.retrieve(
+                        dq,
+                        top_k=int(req.doc_top_k),
+                        doc_ids=None,
+                        embed_model=embed_model,
+                        use_mmr=False,
+                        mmr_lambda=0.75,
+                    )
+                    doc_round_hits.extend(hits or [])
+                uniq = {}
+                for h in doc_round_hits:
+                    uniq[int(h["chunk_id"])] = h
+                doc_round_hits = list(uniq.values())
+                doc_round_hits.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+                all_doc_hits.extend(doc_round_hits[: int(req.doc_top_k)])
+
+                researchstore.add_trace(run_id, "docs_retrieve", {"queries": doc_queries, "hits": len(doc_round_hits)})
+
+            if req.use_web:
+                web_queries = plan.get("web_queries") or plan.get("subquestions") or [query]
+                web_queries = [str(x) for x in web_queries if str(x).strip()][:6]
+
+                async def ddg_search(q: str, n: int = 8) -> list[str]:
+                    if not _http:
+                        raise HTTPException(status_code=503, detail="client not initialized")
+                    url = "https://duckduckgo.com/html/"
+                    headers = {"User-Agent": os.getenv("WEB_UA", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari")}
+                    r = await _http.post(url, data={"q": q}, headers=headers, timeout=15.0)
+                    r.raise_for_status()
+                    soup = BeautifulSoup(r.text, "lxml")
+                    links = []
+                    for a in soup.select("a.result__a"):
+                        href = str(a.get("href", ""))
+                        if href and href.startswith("http") and not webstore._is_blocked_url(href):
+                            links.append(href)
+                        if len(links) >= n:
+                            break
+                    return links
+
+                urls = []
+                urls_per_query = max(1, pages_per_round // len(web_queries)) if web_queries else pages_per_round
+                search_tasks = [ddg_search(wq, n=urls_per_query) for wq in web_queries]
+                search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+                
+                for wq, result in zip(web_queries, search_results):
+                    if isinstance(result, Exception):
+                        researchstore.add_trace(run_id, "web_search_error", {"query": wq, "error": str(result)})
+                    elif isinstance(result, list) and result:
+                        urls.extend(result)
+
+                cleaned_urls = []
+                for u in urls:
+                    if u in seen_urls:
+                        continue
+                    seen_urls.add(u)
+                    cleaned_urls.append(u)
+                    if len(cleaned_urls) >= pages_per_round:
+                        break
+
+                researchstore.add_trace(run_id, "web_search", {"queries": web_queries, "urls": cleaned_urls})
+
+                for u in cleaned_urls:
+                    try:
+                        page = await webstore.upsert_page_from_url(u, force=False)
+                        researchstore.add_trace(run_id, "web_upsert", {"url": u, "page_id": page.get("id"), "title": page.get("title")})
+                    except Exception as e:
+                        researchstore.add_trace(run_id, "web_upsert_error", {"url": u, "error": str(e)})
+
+                web_round_hits = []
+                for wq in web_queries:
+                    try:
+                        hits = await webstore.retrieve(
+                            wq,
+                            top_k=int(req.web_top_k),
+                            domain_whitelist=req.domain_whitelist,
+                            embed_model=embed_model,
+                        )
+                        web_round_hits.extend(hits or [])
+                    except Exception as e:
+                        researchstore.add_trace(run_id, "web_retrieve_error", {"query": wq, "error": str(e)})
+                
+                web_uniq = {}
+                for h in web_round_hits:
+                    web_uniq[int(h["chunk_id"])] = h
+                web_round_hits = list(web_uniq.values())
+                web_round_hits.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+                all_web_hits.extend(web_round_hits[: int(req.web_top_k)])
+                researchstore.add_trace(run_id, "web_retrieve", {"hits": len(web_round_hits)})
+
+            doc_uniq = {}
+            for h in all_doc_hits:
+                doc_uniq[int(h["chunk_id"])] = h
+            web_uniq = {}
+            for h in all_web_hits:
+                web_uniq[int(h["chunk_id"])] = h
+
+            doc_hits = sorted(doc_uniq.values(), key=lambda x: x.get("score", 0.0), reverse=True)[: int(req.doc_top_k)]
+            web_hits = sorted(web_uniq.values(), key=lambda x: x.get("score", 0.0), reverse=True)[: int(req.web_top_k)]
+
+            sources_meta, context_lines = _format_sources_for_prompt(doc_hits, web_hits)
+
+            researchstore.clear_sources(run_id)
+            researchstore.add_sources(run_id, sources_meta)
+
+            verify = await _verify_claims(verifier_model, query, context_lines)
+            researchstore.clear_claims(run_id)
+            researchstore.add_claims(run_id, verify["claims"])
+            researchstore.add_trace(run_id, "verify", {"claims": len(verify["claims"])})
+
+            supported = sum(1 for c in verify["claims"] if (c.get("status") == "supported"))
+            unclear = sum(1 for c in verify["claims"] if (c.get("status") != "supported"))
+            researchstore.add_trace(run_id, "round_end", {"round": rno, "supported": supported, "other": unclear})
+
+            if supported >= 6:
+                break
+
+        final = await _synthesize(synth_model, query, context_lines, verify["claims"])
+        researchstore.set_run_done(run_id, final)
+        researchstore.add_trace(run_id, "done", {"len": len(final)})
+
+        return {"ok": True, "run_id": run_id, "answer": final}
+    except Exception as e:
+        researchstore.set_run_error(run_id, str(e))
+        researchstore.add_trace(run_id, "error", {"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/research/runs")
 async def api_research_runs(chat_id: str | None = None, limit: int = 50, offset: int = 0):
@@ -1306,73 +1189,6 @@ async def api_research_sources(run_id: str):
 @app.get("/api/research/{run_id}/claims")
 async def api_research_claims(run_id: str):
     return {"claims": researchstore.get_claims(run_id)}
-
-@app.post("/api/research/start")
-async def api_research_start(req: ResearchReq):
-    query = (req.query or "").strip()
-    if not query:
-        raise HTTPException(status_code=400, detail="query required")
-
-    settings = req.model_dump(exclude_none=True)
-    run_id = researchstore.create_run(req.chat_id, query, req.mode, settings)
-    researchstore.add_trace(run_id, "start", {"query": query, "settings": settings})
-
-    async def runner():
-        try:
-            await _run_research_pipeline(run_id, req)
-        except asyncio.CancelledError:
-            researchstore.set_run_error(run_id, "cancelled")
-            researchstore.add_trace(run_id, "cancel", {"run_id": run_id})
-            raise
-        except Exception as e:
-            researchstore.set_run_error(run_id, str(e))
-            researchstore.add_trace(run_id, "error", {"error": str(e)})
-        finally:
-            async with _research_tasks_lock:
-                _research_tasks.pop(run_id, None)
-
-    async with _research_tasks_lock:
-        _research_tasks[run_id] = asyncio.create_task(runner())
-
-    return {"ok": True, "run_id": run_id}
-
-@app.post("/api/research/{run_id}/cancel")
-async def api_research_cancel(run_id: str):
-    async with _research_tasks_lock:
-        t = _research_tasks.get(run_id)
-        if not t:
-            return {"ok": True, "cancelled": False, "reason": "not_running"}
-        t.cancel()
-    return {"ok": True, "cancelled": True}
-
-@app.get("/api/research/{run_id}/events")
-async def api_research_events(run_id: str, poll_ms: int = 400):
-    async def gen():
-        offset = 0
-        while True:
-            try:
-                batch = researchstore.get_trace(run_id, limit=200, offset=offset) or []
-            except Exception as e:
-                yield json.dumps({"type": "error", "error": str(e)}) + "\n"
-                return
-
-            if batch:
-                for ev in batch:
-                    yield json.dumps({"type": "trace", "event": ev}) + "\n"
-                offset += len(batch)
-            else:
-                # stop once run is done or errored
-                try:
-                    run = researchstore.get_run(run_id)
-                    if run and run.get("status") in ("done", "error"):
-                        yield json.dumps({"type": "done", "status": run.get("status")}) + "\n"
-                        return
-                except Exception:
-                    pass
-
-            await asyncio.sleep(max(0.05, poll_ms / 1000.0))
-
-    return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 class SourceFlagReq(BaseModel):
     model_config = ConfigDict(extra="ignore")

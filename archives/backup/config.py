@@ -15,6 +15,7 @@ class Config:
         self.rag_db = os.getenv("RAG_DB", "rag.sqlite3")
         self.chat_db = os.getenv("CHAT_DB", "chat.sqlite3")
         self.web_db = os.getenv("WEB_DB", "web.sqlite3")
+        self.research_db = os.getenv("RESEARCH_DB", "research.sqlite3")
         
         self.decider_model = os.getenv("DECIDER_MODEL")
         self.research_planner_model = os.getenv("RESEARCH_PLANNER_MODEL")

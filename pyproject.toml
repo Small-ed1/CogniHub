@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "router-phase1"
+version = "0.1.0"
+description = "AI chat and research application with web scraping and RAG"
+authors = [
+    {name = "Anomaly Co", email = "support@anomaly.co"},
+]
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "python-multipart",
+    "beautifulsoup4",
+    "lxml",
+    "readability-lxml",
+    "textual",
+    "rich",
+    "psutil",
+    "numpy",
+]
+requires-python = ">=3.8"
+readme = "README.md"
+
+[project.scripts]
+router-app = "router_phase1.app:main"
+router-tui = "router_phase1.tui.router_tui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["router_phase1*"]
+
+[tool.setuptools.package-data]
+router_phase1 = ["static/*", "static/**/*"]

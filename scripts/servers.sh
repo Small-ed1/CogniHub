@@ -41,7 +41,7 @@ start_ollama() {
 start_fastapi() {
     echo "Starting FastAPI..."
     source venv/bin/activate
-    nohup uvicorn bin.app:app --host 0.0.0.0 --port 8000 > "$FASTAPI_LOG" 2>&1 &
+    nohup uvicorn app:app --host 0.0.0.0 --port 8000 > "$FASTAPI_LOG" 2>&1 &
     FASTAPI_PID=$!
     echo "$FASTAPI_PID" > "$FASTAPI_PID_FILE"
     echo "FastAPI started (PID: $FASTAPI_PID), logging to $FASTAPI_LOG"
