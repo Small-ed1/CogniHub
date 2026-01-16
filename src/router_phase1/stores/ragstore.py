@@ -6,7 +6,7 @@ from typing import Optional, Any
 from contextlib import contextmanager
 import httpx
 
-DB_PATH = os.getenv("RAG_DB", os.path.join(os.path.dirname(__file__), "../data/rag.sqlite3"))
+DB_PATH = os.getenv("RAG_DB", os.path.join(os.path.dirname(__file__), "../../../data/rag.sqlite3"))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "embeddinggemma")
 
@@ -164,9 +164,14 @@ def _client() -> httpx.AsyncClient:
 
 async def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
     model = model or DEFAULT_EMBED_MODEL
-    r = await _client().post(f"{OLLAMA_URL}/api/embed", json={"model": model, "input": texts})
-    r.raise_for_status()
-    return r.json().get("embeddings", [])
+    embeddings = []
+    for text in texts:
+        r = await _client().post(f"{OLLAMA_URL}/api/embeddings", json={"model": model, "prompt": text})
+        r.raise_for_status()
+        emb = r.json().get("embedding")
+        if emb:
+            embeddings.append(emb)
+    return embeddings
 
 def _pack(vec: list[float]) -> bytes:
     return array("f", vec).tobytes()

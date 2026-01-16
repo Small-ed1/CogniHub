@@ -678,8 +678,8 @@ chatEl?.addEventListener("click", async (e) => {
   const a = e.target.closest?.("[data-chunk]");
   if (!a) return;
   e.preventDefault();
-  const cid = Number(a.getAttribute("data-chunk"));
-  if (!cid) return;
+   const cid = parseInt(a.getAttribute("data-chunk"), 10);
+   if (isNaN(cid)) return;
   await openSourceModal(cid);
 });
 
@@ -718,11 +718,22 @@ slashPalette.addEventListener("mousedown", (e) => {
 
 // keyboard nav
 promptEl.addEventListener("keydown", (e) => {
-  // Ctrl/Cmd+Enter sends (matches placeholder)
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-    e.preventDefault();
-    send();
-    return;
+  const mode = (document.getElementById("sendKey")?.value || "ctrlenter");
+
+  if (mode === "enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
+      if (promptEl.value.startsWith("/")) return;
+      e.preventDefault();
+      send();
+      return;
+    }
+  } else {
+    // Ctrl/Cmd+Enter sends (matches placeholder)
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault();
+      send();
+      return;
+    }
   }
 
   if (!slashOpen) return;
@@ -1290,8 +1301,8 @@ function renderChat() {
   chatEl.querySelectorAll("[data-chunk]").forEach(a => {
     a.addEventListener("click", async (e) => {
       e.preventDefault();
-      const cid = Number(a.getAttribute("data-chunk"));
-      if (!cid) return;
+       const cid = parseInt(a.getAttribute("data-chunk"), 10);
+       if (isNaN(cid)) return;
       await openSourceModal(cid);
     });
   });
