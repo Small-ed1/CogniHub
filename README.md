@@ -172,14 +172,8 @@ WEB_UA=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36
 ### Testing
 
 ```bash
-# Run component tests
-python backup/test_components.py
-
-# Run integration tests
-python backup/test_integration.py
-
 # Run pytest suite
-cd backup && python -m pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
 ### Code Quality
@@ -208,13 +202,7 @@ sqlite3 rag.sqlite3 "VACUUM;"
 
 ## Deployment Options
 
-### Docker (Backup Directory)
 
-Build and run using Docker Compose:
-```bash
-cd backup
-docker-compose up -d
-```
 
 ### Manual Linux Deployment
 

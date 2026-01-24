@@ -21,6 +21,8 @@ dependencies = [
     "rich",
     "psutil",
     "numpy",
+    "pydantic",
+    "mypy",
 ]
 requires-python = ">=3.8"
 readme = "README.md"

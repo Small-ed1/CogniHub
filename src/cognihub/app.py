@@ -1105,3 +1105,16 @@ class SourceFlagReq(BaseModel):
 async def api_research_source_flag(run_id: str, source_id: int, req: SourceFlagReq):
     researchstore.set_source_flag(run_id, source_id, pinned=req.pinned, excluded=req.excluded)
     return {"ok": True}
+
+
+def main():
+    """Entry point for running the CogniHub application."""
+    import uvicorn
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("RELOAD", "false").lower() == "true"
+    uvicorn.run("cognihub.app:app", host=host, port=port, reload=reload)
+
+
+if __name__ == "__main__":
+    main()

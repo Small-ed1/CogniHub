@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+from pathlib import Path
 from typing import Optional
 
 class Config:
@@ -12,11 +13,15 @@ class Config:
         self.web_allowed_hosts = os.getenv("WEB_ALLOWED_HOSTS", "")
         self.web_blocked_hosts = os.getenv("WEB_BLOCKED_HOSTS", "")
         
-        self.rag_db = os.getenv("RAG_DB", "data/rag.sqlite3")
-        self.chat_db = os.getenv("CHAT_DB", "data/chat.sqlite3")
-        self.web_db = os.getenv("WEB_DB", "data/web.sqlite3")
-        self.research_db = os.getenv("RESEARCH_DB", "data/research.sqlite3")
-        self.tool_db = os.getenv("TOOL_DB", "data/tool.sqlite3")
+        # Use user data directory for databases
+        data_dir = Path.home() / ".cognihub" / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        self.rag_db = os.getenv("RAG_DB", str(data_dir / "rag.sqlite3"))
+        self.chat_db = os.getenv("CHAT_DB", str(data_dir / "chat.sqlite3"))
+        self.web_db = os.getenv("WEB_DB", str(data_dir / "web.sqlite3"))
+        self.research_db = os.getenv("RESEARCH_DB", str(data_dir / "research.sqlite3"))
+        self.tool_db = os.getenv("TOOL_DB", str(data_dir / "tool.sqlite3"))
         
         self.decider_model = os.getenv("DECIDER_MODEL")
         self.research_planner_model = os.getenv("RESEARCH_PLANNER_MODEL")

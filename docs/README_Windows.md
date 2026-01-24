@@ -1,6 +1,6 @@
-# Router Phase 1 - Windows Setup
+# CogniHub - Windows Setup
 
-This guide explains how to run Router Phase 1 on Windows.
+This guide explains how to run CogniHub on Windows.
 
 ## Prerequisites
 
@@ -72,9 +72,9 @@ This guide explains how to run Router Phase 1 on Windows.
 3. Open web UI at http://localhost:8000
 
 4. Or run TUI:
-   ```
-   python router_tui.py
-   ```
+    ```
+    python src/cognihub/tui/cognihub_tui.py
+    ```
 
 ## PowerShell Script Commands
 
@@ -97,10 +97,8 @@ This guide explains how to run Router Phase 1 on Windows.
 ## Directory Structure
 
 - `src/` - Python source code
-- `web/` - Static web files
-- `data/` - SQLite databases
-- `logs/` - Log files
-- `config/` - Configuration files
+- `src/cognihub/static/` - Static web files
+- `~/.cognihub/data/` - SQLite databases (created automatically)
 - `docs/` - Documentation
 - `scripts/` - Batch scripts
 
