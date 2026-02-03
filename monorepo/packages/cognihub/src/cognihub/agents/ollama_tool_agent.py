@@ -421,6 +421,8 @@ class ToolCallingAgent:
         if key in self.cache:
             return {"cached": True, "result": self.cache[key]}
 
+        out: Json
+
         spec = self.registry.get_spec(name)
         fn = self.registry.get_fn(name)
         if not spec or not fn:
