@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import json
 import re
 import logging
@@ -56,7 +57,7 @@ class QueryIntent:
         
         if any(word in text_lower for word in ['weather', 'forecast', 'temperature', 'rain', 'snow', 'wind', 'sunny', 'cloudy']):
             return 'weather'
-        elif any(word in text_lower for word in ['news', 'breaking', 'happening', 'recent']):
+        elif any(word in text_lower for word in ['news', 'breaking', 'happening', 'recent', 'won', 'winner', 'champion', 'competition', 'contest', 'tournament', 'world']):
             return 'news'
         elif any(word in text_lower for word in ['time', 'date', 'now', 'current']):
             return 'time'
@@ -97,6 +98,11 @@ class QueryIntent:
                 entities['date'] = match.group(1)
                 break
         
+        # Year extraction
+        year_match = re.search(r'\b(20\d{2})\b', text)
+        if year_match:
+            entities['year'] = year_match.group(1)
+        
         return entities
 
 
@@ -123,6 +129,10 @@ class ToolCallDecider:
     
     def _has_recent_relevant_info(self, intent: QueryIntent, context: List[Dict[str, Any]]) -> bool:
         """Check if context contains recent relevant information."""
+        # For news intents, we usually want fresh information
+        if intent.intent_type == 'news':
+            return False  # Always call tools for news queries to get fresh info
+            
         # Look for recent tool results or relevant data
         for msg in reversed(context[-3:]):  # Check last 3 messages
             content = msg.get('content', '').lower()
@@ -179,7 +189,7 @@ class EvidenceSynthesizer:
     def _process_web_results(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Process web search results into structured evidence."""
         
-        processed = {'sources': [], 'facts': []}
+        processed: Dict[str, Any] = {'sources': [], 'facts': []}
         
         for item in result.get('items', []):
             source = {
@@ -201,7 +211,7 @@ class EvidenceSynthesizer:
     def _process_doc_results(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Process document search results into structured evidence."""
         
-        processed = {'sources': [], 'facts': []}
+        processed: Dict[str, Any] = {'sources': [], 'facts': []}
         
         for chunk in result.get('chunks', []):
             source = {
@@ -348,51 +358,48 @@ class IntelligentToolLoop:
             {"role": "user", "content": user_text},
         ]
         
-        # Stage 3: Tool-calling loop
+        # Stage 3: Tool-calling loop with native Ollama tool calling
         cycle_count = 0
         tool_results = []
+        
+        # Define tools for Ollama (use real schema format)
+        tools = tool_registry.list_for_prompt()
         
         while cycle_count < self.decider.max_cycles:
             cycle_count += 1
             
-            # Decide if tools should be called
-            should_call = self.decider.should_call_tools(intent, working_messages)
-            logger.info(f"Cycle {cycle_count}: should_call_tools={should_call}")
+            # Get LLM response with tools
+            payload = {
+                "model": model,
+                "messages": working_messages,
+                "stream": False,
+                "tools": tools,
+            }
+            if options is not None:
+                payload["options"] = options
+            if keep_alive is not None:
+                payload["keep_alive"] = keep_alive
             
-            if should_call:
-                # Build tool prompt
-                tools_for_prompt = tool_registry.list_for_prompt()
-                tool_prompt = f"Available tools: {tools_for_prompt}"
-                working_messages.append({"role": "system", "content": tool_prompt})
-                
-                # Get LLM tool decisions
-                raw_response = await self._call_llm(
-                    http=http,
-                    ollama_url=ollama_url,
-                    model=model,
-                    messages=working_messages,
-                    options=options,
-                    keep_alive=keep_alive,
-                )
-                
-                # Execute tools
-                tool_calls = self._extract_tool_calls(raw_response)
+            response = await http.post(f"{ollama_url}/api/chat", json=payload, timeout=30)
+            response.raise_for_status()
+            msg = response.json()["message"]
+            content = msg.get("content", "").strip()
+            
+            # Extract and execute tool calls
+            tool_calls = msg.get("tool_calls", [])
+            if tool_calls:
                 tool_results.extend(await self._execute_tools(tool_calls, tool_executor, http, embed_model, kiwix_url))
                 
-        # Add tool results back to context
-        if evidence['sources'] and tool_calls:
-            new_results = tool_results[-len(tool_calls):]
-            for result in new_results:
-                working_messages.append(self._format_tool_result(result))
-            
-            # Stage 4: Check sufficiency
-            evidence = self.synthesizer.summarize_evidence(intent, tool_results)
-            is_sufficient = self.synthesizer.is_sufficient_for_answer(evidence, intent)
-            
-            logger.info(f"Cycle {cycle_count}: sufficient={is_sufficient}")
-            
-            if is_sufficient:
-                return self.synthesizer.format_final_answer(evidence)
+                # Add tool result message and continue loop
+                working_messages.append({
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": tool_calls,
+                })
+            else:
+                # No tool calls - check if we have answer
+                if content.strip():
+                    return content
             
             # Prepare for next cycle if needed
             if cycle_count < self.decider.max_cycles:
@@ -420,7 +427,6 @@ class IntelligentToolLoop:
     
     async def _call_llm(self, *, http, ollama_url, model, messages, options, keep_alive):
         """Make LLM call."""
-        import httpx
         from ..config import config
         
         payload = {
@@ -433,8 +439,8 @@ class IntelligentToolLoop:
         if keep_alive:
             payload["keep_alive"] = keep_alive
             
-        async with http.AsyncClient() as client:
-            response = await client.post(f"{ollama_url}/api/chat", json=payload, timeout=30)
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.post(f"{ollama_url}/api/chat", json=payload, timeout=30)
             response.raise_for_status()
             return response.json().get("message", {}).get("content", "")
     
@@ -469,12 +475,6 @@ class IntelligentToolLoop:
                     "tool": tool_name,
                     "result": result,
                     "ok": True
-                })
-            except Exception as e:
-                results.append({
-                    "tool": tool_name,
-                    "result": {"error": str(e)},
-                    "ok": False
                 })
             except Exception as e:
                 results.append({

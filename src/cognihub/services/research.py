@@ -182,7 +182,7 @@ async def run_research(
         all_kiwix_hits: list = []
         seen_urls: set[str] = set()
         context_lines: list[str] = []
-        verify = {"claims": []}
+        verify: dict[str, Any] = {"claims": []}
 
         doc_provider = DocRetrievalProvider()
         web_provider = WebRetrievalProvider()

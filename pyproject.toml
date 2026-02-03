@@ -30,6 +30,7 @@ readme = "README.md"
 [project.scripts]
 cognihub-app = "cognihub.app:main"
 cognihub-tui = "cognihub.tui.cognihub_tui:main"
+cognihub = "cognihub.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

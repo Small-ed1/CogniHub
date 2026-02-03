@@ -475,8 +475,8 @@ def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chun
 
 def _cap_per_doc(rows, cap: int):
     if cap <= 0: return rows
-    out = []
-    seen = {}
+    out: list[Any] = []
+    seen: dict[int, int] = {}
     for r in rows:
         did = int(r["doc_id"])
         n = seen.get(did, 0)

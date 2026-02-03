@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,11 +13,47 @@ from pydantic import BaseModel, ConfigDict
 
 from ..stores import ragstore, webstore
 from .. import config
+from ..tools.models import ToolProgress
 from .retrieval import KiwixRetrievalProvider
 from .web_ingest import WebIngestQueue
 from .web_search import web_search_with_fallback, SearchError
 
 logger = logging.getLogger(__name__)
+
+def _tool_engine() -> str:
+    """Runtime-checkable tool engine selection."""
+    return os.getenv("TOOL_ENGINE", "legacy")
+
+
+def _runtime_signature(http, ingest_queue, embed_model, kiwix_url) -> str:
+    """Create a unique signature for runtime configuration."""
+    # Use object identity for http client to detect stale connections
+    http_id = id(http) if http else "none"
+    ingest_id = id(ingest_queue) if ingest_queue else "none"
+    return f"http:{http_id}|ingest:{ingest_id}|embed:{embed_model}|kiwix:{kiwix_url}"
+
+
+def _get_or_create_runtime(http, ingest_queue, embed_model, kiwix_url):
+    """Get or create runtime with proper dependency injection."""
+    signature = _runtime_signature(http, ingest_queue, embed_model, kiwix_url)
+    
+    if signature not in _runtime_cache:
+        from ..tools.phase0_registry import build_phase0_registry
+        from ..tools.runtime import ToolRuntime
+        
+        registry = build_phase0_registry(
+            http=http,
+            ingest_queue=ingest_queue,
+            embed_model=embed_model,
+            kiwix_url=kiwix_url
+        )
+        runtime = ToolRuntime(registry)
+        _runtime_cache[signature] = runtime
+    
+    return _runtime_cache[signature]
+
+# Runtime cache keyed by configuration signature to avoid stale dependencies
+_runtime_cache: dict[str, Any] = {}
 
 
 DEFAULT_MAX_TOOL_ROUNDS = 3
@@ -146,8 +183,11 @@ async def tool_web_search(
     kiwix_results: list[dict[str, Any]] = []
     if kiwix_url:
         try:
-            provider = KiwixRetrievalProvider(kiwix_url)
-            kiwix_results = [r.__dict__ for r in await provider.retrieve(query, top_k=req.top_k, embed_model=req.embed_model)]
+            kiwix_provider = KiwixRetrievalProvider(kiwix_url)
+            kiwix_results = [
+                r.__dict__
+                for r in await kiwix_provider.retrieve(query, top_k=req.top_k, embed_model=req.embed_model)
+            ]
         except Exception as exc:
             errors.append({"stage": "kiwix", "error": str(exc)})
 
@@ -155,8 +195,8 @@ async def tool_web_search(
         urls, provider_info = await web_search_with_fallback(http, query, n=pages)
         # Log which provider succeeded
         if provider_info.endswith("_success"):
-            provider = provider_info.replace("_success", "")
-            logger.info(f"Search succeeded with provider: {provider}")
+            provider_name = provider_info.replace("_success", "")
+            logger.info(f"Search succeeded with provider: {provider_name}")
     except SearchError as exc:
         urls = []
         errors.append({"stage": "search", "error": str(exc)})
@@ -245,20 +285,20 @@ async def _execute_tool_call(
     kiwix_url: str | None,
 ) -> dict[str, Any]:
     if name == "doc_search":
-        req = ToolDocSearchReq.model_validate(args)
-        return await tool_doc_search(req)
-    if name == "web_search":
-        req = ToolWebSearchReq.model_validate(args)
+        doc_req = ToolDocSearchReq.model_validate(args)
+        return await tool_doc_search(doc_req)
+    elif name == "web_search":
+        web_req = ToolWebSearchReq.model_validate(args)
         return await tool_web_search(
-            req,
+            web_req,
             http=http,
             ingest_queue=ingest_queue,
             embed_model=embed_model,
             kiwix_url=kiwix_url,
         )
-    if name == "kiwix_search":
-        req = ToolKiwixSearchReq.model_validate(args)
-        return await tool_kiwix_search(req, kiwix_url=kiwix_url, embed_model=embed_model)
+    elif name == "kiwix_search":
+        kiwix_req = ToolKiwixSearchReq.model_validate(args)
+        return await tool_kiwix_search(kiwix_req, kiwix_url=kiwix_url, embed_model=embed_model)
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -346,20 +386,125 @@ async def run_tool_calling_loop(
             if not isinstance(call, dict):
                 continue
             name, args, call_id = _parse_tool_call(call, idx)
+            execution_meta = None  # Initialize at scope level for audit logging
             try:
                 if emit and name:
                     await emit({"type": "tool", "name": name})
-                result = await _execute_tool_call(
-                    name,
-                    args,
-                    http=http,
-                    ingest_queue=ingest_queue,
-                    embed_model=embed_model,
-                    kiwix_url=kiwix_url,
-                )
+                
+                # Use registry engine if enabled
+                if _tool_engine() == "registry":
+                    # Get or create runtime with proper dependency injection
+                    runtime = _get_or_create_runtime(http, ingest_queue, embed_model, kiwix_url)
+                    
+                    # Track execution metadata
+                    start_time = time.time()
+                    chunk_count = 0
+                    total_bytes = 0
+                    
+                    # Execute with streaming runtime
+                    final_result = None
+                    execution_mode = "registry"
+                    
+                    async for chunk in runtime.call_async(name, args):
+                        chunk_count += 1
+                        
+                        # Calculate result size for non-progress chunks
+                        if chunk.ok and chunk.result is not None and not isinstance(chunk.result, ToolProgress):
+                            try:
+                                total_bytes += len(str(chunk.result).encode('utf-8'))
+                            except Exception:
+                                pass
+                        
+                        if chunk.ok and chunk.result is not None and isinstance(chunk.result, ToolProgress):
+                            if emit:
+                                await emit({
+                                    "type": "tool_progress",
+                                    "tool": name,
+                                    "tool_call_id": call_id,
+                                    **chunk.result.model_dump()
+                                })
+                        elif not chunk.ok:
+                            raise RuntimeError(chunk.error or "Tool failed")
+                        elif chunk.result is not None and not isinstance(chunk.result, ToolProgress):
+                            final_result = chunk.result
+                    
+                    # Calculate execution metadata
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    result = final_result
+                    
+                    execution_meta = {
+                        "duration_ms": duration_ms,
+                        "result_bytes": total_bytes,
+                        "execution_mode": execution_mode,
+                        "chunk_count": chunk_count,
+                        "engine": "registry"
+                    }
+                else:
+                    # Legacy execution path
+                    start_time = time.time()
+                    result = await _execute_tool_call(
+                        name,
+                        args,
+                        http=http,
+                        ingest_queue=ingest_queue,
+                        embed_model=embed_model,
+                        kiwix_url=kiwix_url,
+                    )
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    
+                    try:
+                        total_bytes = len(str(result).encode('utf-8'))
+                    except Exception:
+                        total_bytes = 0
+                    
+                    execution_meta = {
+                        "duration_ms": duration_ms,
+                        "result_bytes": total_bytes,
+                        "execution_mode": "legacy",
+                        "chunk_count": 1,
+                        "engine": "legacy"
+                    }
+                
+                # Create success payload with metadata
                 payload = {"ok": True, "tool": name, "result": result}
+                if execution_meta:
+                    payload["meta"] = execution_meta
+                
+                # Audit log tool execution (success)
+                logger.info(
+                    "Tool execution succeeded",
+                    extra={
+                        "tool": name,
+                        "ok": True,
+                        "execution_meta": execution_meta,
+                    }
+                )
             except Exception as exc:
-                payload = {"ok": False, "tool": name, "error": str(exc)}
+                # Import typed exceptions
+                from ..tools.exceptions import ToolError
+                
+                # Handle typed exceptions separately
+                if isinstance(exc, ToolError):
+                    payload = {"ok": False, "tool": name, "error": str(exc), "code": exc.code}
+                    if exc.details:
+                        payload["details"] = exc.details
+                else:
+                    payload = {"ok": False, "tool": name, "error": str(exc), "code": "exception"}
+                
+                # Add metadata if available
+                if execution_meta:
+                    payload["meta"] = execution_meta
+                
+                # Audit log tool execution (errors)
+                error_code = exc.code if isinstance(exc, ToolError) else "exception"
+                logger.info(
+                    "Tool execution failed",
+                    extra={
+                        "tool": name,
+                        "ok": False,
+                        "error_code": error_code,
+                    }
+                )
             working.append(
                 {
                     "role": "tool",

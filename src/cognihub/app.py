@@ -59,7 +59,7 @@ _model_registry = ModelRegistry(config.config.ollama_url)
 _web_ingest = WebIngestQueue(concurrency=3)
 
 # Simple in-memory cache
-_cache = {}
+_cache: dict[str, tuple[Any, float]] = {}
 _cache_lock = asyncio.Lock()
 
 SLASH_COMMANDS = [
@@ -763,7 +763,7 @@ async def decide_model(req: DecideReq):
     except Exception as e:
         return {"model": None, "auto": False, "error": f"tags failed: {e}"}
 
-    installed = []
+    installed: list[dict[str, Any]] = []
     for m in models:
         name = m.name
         if not name:
@@ -774,7 +774,7 @@ async def decide_model(req: DecideReq):
     if not installed:
         return {"model": None, "auto": False, "error": "No chat models installed"}
 
-    installed.sort(key=lambda x: x["size"])
+    installed.sort(key=lambda x: int(x.get("size") or 0))
     allowed = [m["name"] for m in installed]
 
     decider = os.getenv("DECIDER_MODEL")
@@ -864,7 +864,7 @@ async def api_chat(req: ChatReq, request: Request):
                     options=req.options,
                     keep_alive=req.keep_alive,
                     embed_model=DEFAULT_EMBED_MODEL,
-                    tool_registry=_model_registry,
+                    tool_registry=app.state.tool_registry,
                     tool_executor=app.state.tool_executor,
                     kiwix_url=os.getenv("KIWIX_URL"),
                     chat_id=chat_id,

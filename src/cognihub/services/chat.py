@@ -11,6 +11,7 @@ from .models import ModelRegistry
 from .retrieval import DocRetrievalProvider
 from .tooling import chat_with_tools
 from .web_ingest import WebIngestQueue
+from .hybrid_router import smart_chat, get_router
 
 
 def _validate_messages(msgs: list[dict]) -> list[dict]:

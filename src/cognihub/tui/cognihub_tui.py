@@ -6,6 +6,7 @@ Full-featured CLI/TUI with same functionality as web GUI.
 
 import asyncio, sys, os, json
 from datetime import datetime
+from typing import Any
 import httpx
 
 from textual.app import App, ComposeResult
@@ -22,7 +23,7 @@ API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000").rstrip("/")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 
 # State as a dictionary wrapper
-_state = {
+_state: dict[str, Any] = {
     "current_chat_id": None,
     "chats": [],
     "messages": [],

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 from pydantic import BaseModel
 
 
@@ -45,3 +45,94 @@ class ToolRegistry:
                     }
                 )
         return out
+
+    def build_ollama_tools(self) -> List[Dict[str, Any]]:
+        """Build Ollama-native tool format from registry (sanitized schema)."""
+        out: List[Dict[str, Any]] = []
+
+        for t in self._tools.values():
+            if not t.enabled:
+                continue
+
+            params: Dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+
+            if t.args_model is not None:
+                full = t.args_model.model_json_schema()
+                params = sanitize_parameters(full)
+
+            out.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": params,
+                    },
+                }
+            )
+
+        return out
+
+
+def sanitize_schema_node(node: Any, defs: Optional[Dict[str, Any]] = None) -> Any:
+    if not isinstance(node, dict):
+        return node
+
+    out: Dict[str, Any] = {}
+    if defs is None:
+        defs = {}
+
+    # handle $ref - resolve to actual definition
+    if "$ref" in node:
+        ref_path = node["$ref"]
+        if ref_path.startswith("#/$defs/"):
+            def_name = ref_path.split("/")[-1]
+            if def_name in defs:
+                return sanitize_schema_node(defs[def_name], defs)
+        return {}
+
+    # handle anyOf - take first non-null option for simplicity
+    if "anyOf" in node:
+        # preserve property-level description when anyOf exists
+        property_desc = node.get("description") if isinstance(node.get("description"), str) else None
+        
+        for option in node["anyOf"]:
+            if not (isinstance(option, dict) and option.get("type") == "null"):
+                result = sanitize_schema_node(option, defs)
+                # preserve description from parent anyOf if not in option
+                if property_desc and "description" not in result:
+                    result["description"] = property_desc
+                return result
+        return {}
+
+    # keep core type-ish info + array constraints
+    for k in ("type", "enum", "minimum", "maximum", "minLength", "maxLength", "format", 
+              "pattern", "minItems", "maxItems"):
+        if k in node:
+            out[k] = node[k]
+
+    # keep description (helps model call tools correctly)
+    if "description" in node and isinstance(node["description"], str):
+        out["description"] = node["description"]
+
+    # arrays
+    if "items" in node:
+        out["items"] = sanitize_schema_node(node["items"], defs)
+
+    # objects
+    if "properties" in node and isinstance(node["properties"], dict):
+        out["properties"] = {k: sanitize_schema_node(v, defs) for k, v in node["properties"].items()}
+
+    if "required" in node and isinstance(node["required"], list):
+        out["required"] = node["required"]
+
+    return out
+
+
+def sanitize_parameters(schema: Dict[str, Any]) -> Dict[str, Any]:
+    defs = schema.get("$defs", {})
+    return sanitize_schema_node({
+        "type": "object",
+        "properties": schema.get("properties", {}) or {},
+        "required": schema.get("required", []) or [],
+    }, defs)

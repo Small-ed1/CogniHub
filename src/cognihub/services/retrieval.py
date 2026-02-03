@@ -128,14 +128,15 @@ class KiwixRetrievalProvider(RetrievalProvider):
         query_emb = (await ragstore.embed_texts([q], model=embed_model))[0]
         qvec = ragstore.embedding_to_array(query_emb)
 
-        texts = [p["text"] for p in pages]
+        texts: list[str] = [str(p.get("text") or "") for p in pages]
         embeddings = await ragstore.embed_texts(texts, model=embed_model)
 
         items: list[RetrievalResult] = []
         for meta, emb in zip(pages, embeddings):
             vec = ragstore.embedding_to_array(emb)
             score = float(ragstore.cosine(qvec, vec))
-            chunk_id = int(hashlib.sha256(meta["url"].encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
+            url = str(meta.get("url") or "")
+            chunk_id = int(hashlib.sha256(url.encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
             items.append(
                 RetrievalResult(
                     source_type="kiwix",
