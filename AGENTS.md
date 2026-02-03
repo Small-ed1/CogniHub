@@ -1,281 +1,156 @@
-# AGENTS.md - CogniHub Development Guide
+# AGENTS.md
 
-This file contains essential information for AI coding agents working on the CogniHub codebase. It includes build/lint/test commands, code style guidelines, and development practices.
+This guide is for agentic coding assistants working in this repository.
 
-## Build/Lint/Test Commands
+Notes
+- The repo is mid-migration; the actively-developed setup is under `monorepo/`.
+- Prefer small, focused changes that match existing patterns.
 
-### Running the Application
+Cursor/Copilot Rules
+- No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` found.
 
+## Build / Run / Lint / Test
+
+Recommended setup (monorepo)
 ```bash
-# Start the web server (development mode)
-uvicorn src.cognihub.app:app --reload --host 0.0.0.0 --port 8000
+cd monorepo
+python -m venv .venv
+source .venv/bin/activate
 
-# Start the terminal UI
-python src/cognihub/tui/cognihub_tui.py
-
-# Run the Ollama tool agent
-./scripts/run_agent.sh
+python -m pip install -U pip
+python -m pip install -e packages/ollama_cli
+python -m pip install -e packages/cognihub
 ```
 
-### Testing Commands
-
+Useful helper scripts (monorepo)
 ```bash
-# Run all tests
-python -m pytest tests/ -v
+cd monorepo
 
-# Run specific test file
-python -m pytest tests/test_context_builder.py -v
+# generate a local .env (paths/endpoints) without committing secrets
+python scripts/setup_env.py
 
-# Run single test function
-python -m pytest tests/test_context_builder.py::test_build_context_caps_and_dedupe -v
+# sanity check endpoints + directories
+python scripts/doctor.py
 
-# Run tests with coverage
-python -m pytest tests/ --cov=src/cognihub --cov-report=html
-
-# Run component tests (if backup directory exists)
-python backup/test_components.py
-
-# Run integration tests (if backup directory exists)
-python backup/test_integration.py
+# optional: create convenience symlinks like ~/zims and ~/Ebooks
+python scripts/setup_links.py
 ```
 
-### Code Quality Commands
-
+Run server + UI
 ```bash
-# Type checking with mypy
-mypy src/cognihub/ --ignore-missing-imports
+# FastAPI (dev)
+cd monorepo
+uvicorn cognihub.app:app --reload --host 127.0.0.1 --port 8000
 
-# Syntax validation
+# Terminal UI
+cd monorepo
+cognihub-tui
+
+# CLI
+cd monorepo
+cognihub --help
+```
+
+Tests (monorepo)
+```bash
+cd monorepo
+
+# all tests
+python -m pytest -q
+
+# one file
+python -m pytest packages/cognihub/tests/test_context_builder.py -q
+
+# single test
+python -m pytest packages/cognihub/tests/test_context_builder.py::test_build_context_caps_and_dedupe -q
+
+# filter by substring
+python -m pytest -k "context_builder or tool_runtime" -q
+```
+
+Tests (legacy root layout)
+```bash
+# all tests
+PYTHONPATH=src python -m pytest -q
+
+# single test
+PYTHONPATH=src python -m pytest tests/test_tool_runtime.py::test_tool_executor_timeout -q
+```
+
+Type checking / sanity checks
+```bash
+cd monorepo
+
+# mypy (kept permissive; tighten only when scoped)
+python -m mypy packages/cognihub/src/cognihub --ignore-missing-imports
+python -m mypy packages/ollama_cli/src/ollama_cli --ignore-missing-imports
+
+# quick syntax check (legacy root layout)
 python -m py_compile src/cognihub/app.py src/cognihub/stores/*.py src/cognihub/services/*.py
-
-# Import testing
-python -c "import sys; sys.path.insert(0, 'src'); import cognihub.app, cognihub.stores.chatstore, cognihub.stores.ragstore; print('All imports successful')"
 ```
 
-### Database Operations
-
-```bash
-# Check database integrity
-sqlite3 data/chat.sqlite3 "PRAGMA integrity_check;"
-sqlite3 data/rag.sqlite3 "PRAGMA integrity_check;"
-sqlite3 data/web.sqlite3 "PRAGMA integrity_check;"
-
-# Vacuum databases (optimize storage)
-sqlite3 data/chat.sqlite3 "VACUUM;"
-sqlite3 data/rag.sqlite3 "VACUUM;"
-sqlite3 data/web.sqlite3 "VACUUM;"
-```
+Legacy (repo root) notes
+- Root `src/cognihub/` still runs; prefer monorepo for new work.
+- If you run from root without installing, use `PYTHONPATH=src`.
 
 ## Code Style Guidelines
 
-### Python Version & Imports
+Python version
+- Target Python 3.14+ in `monorepo/` (the actively-developed packaging).
 
-- **Python Version**: 3.8+
-- **Import Style**: Use absolute imports within the package
-- **Import Order**:
-  1. Standard library imports (grouped, one per line)
-  2. Third-party imports (grouped, one per line)
-  3. Local imports (relative imports with dots)
-- **Import Example**:
-```python
-from __future__ import annotations
+Imports
+- Use `from __future__ import annotations` at the top of modules with type hints.
+- Group imports: stdlib, third-party, local; separate groups with a blank line.
+- Prefer package-absolute imports within `cognihub` (e.g., `from cognihub.services.chat import stream_chat`).
 
-import os, json, time, asyncio, logging
-from typing import Optional, Any, Dict
-from contextlib import asynccontextmanager
+Formatting
+- 4-space indent, no tabs; keep functions small and readable.
+- Prefer f-strings; avoid deeply nested expressions (use intermediate variables).
+- No auto-formatter is enforced; keep lines ~100 chars when practical.
+- Keep output ASCII by default; only emit unicode intentionally (e.g., user-facing text).
 
-import httpx
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+Typing
+- Add type hints on public functions and any non-trivial internal helpers.
+- Prefer builtin generics (`list[str]`, `dict[str, Any]`) and `| None` unions.
+- For streaming endpoints, be explicit about `AsyncGenerator[str, None]` / async iterators.
 
-from . import config
-from .stores import chatstore
-from .services.chat import stream_chat
-```
+Naming
+- Modules/functions/vars: `snake_case`; classes: `PascalCase`; constants: `UPPER_SNAKE_CASE`.
+- Prefix internal helpers with `_`.
 
-### Naming Conventions
+Error handling
+- Validate inputs early; raise `ValueError` for bad user input in pure functions/services.
+- In FastAPI handlers, translate expected failures into `HTTPException` with correct status codes.
+- Catch broad exceptions only at boundaries (API/tool execution), and return structured errors.
 
-- **Variables**: `snake_case` (e.g., `ollama_url`, `max_upload_bytes`)
-- **Functions**: `snake_case` (e.g., `stream_chat()`, `_validate_messages()`)
-- **Classes**: `PascalCase` (e.g., `Config`, `ModelRegistry`)
-- **Constants**: `UPPER_SNAKE_CASE` (e.g., `OLLAMA_URL`, `MAX_UPLOAD_BYTES`)
-- **Private Methods**: Prefix with single underscore (e.g., `_now()`, `_conn()`)
-- **Modules**: `snake_case` (e.g., `chatstore.py`, `web_ingest.py`)
+Pydantic models
+- Use request/response `BaseModel` schemas for API boundaries.
+- Set `model_config = ConfigDict(extra="ignore")` for tolerant request bodies; use `extra="forbid"` for strict tool contracts.
+- Use `Field()` for constraints and defaults.
 
-### Type Hints
+Async + networking
+- Use explicit timeouts for outbound calls; avoid unbounded concurrency.
+- Use `asyncio.Lock()` when sharing mutable process-wide state.
 
-- **Required**: Use type hints for all function parameters and return values
-- **Style**: Use `|` for union types (Python 3.10+) or `Union` from typing
-- **Optional Types**: Use `Optional[T]` or `T | None`
-- **Examples**:
-```python
-def _cached_get(key: str, ttl: int, fetcher) -> Any:
-async def stream_chat(
-    *,
-    http: httpx.AsyncClient,
-    model: str,
-    messages: list[dict],
-    options: dict | None,
-    keep_alive: str | None,
-) -> AsyncGenerator[str, None]:
-```
+SQLite patterns
+- Use context managers for connections/transactions; keep queries parameterized.
+- Prefer `sqlite3.Row` row factory for dict-like reads.
 
-### Async/Await Patterns
+Security + safety
+- Treat URLs/hosts as untrusted: apply allow/block host lists to mitigate SSRF.
+- Sanitize filenames on upload and enforce size caps (`MAX_UPLOAD_BYTES`).
+- Keep tool outputs bounded (truncate + hash for logs).
 
-- **Context Managers**: Use `@asynccontextmanager` for async context managers
-- **Locks**: Use `asyncio.Lock()` for shared state protection
-- **Timeouts**: Set appropriate timeouts on HTTP clients
-- **Example**:
-```python
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Setup code
-    yield
-    # Cleanup code
+Configuration
+- Runtime config lives in `src/cognihub/config.py` (monorepo mirrors this).
+- Common env vars: `OLLAMA_URL`, `DEFAULT_CHAT_MODEL`, `EMBED_MODEL`, `KIWIX_URL`, `KIWIX_ZIM_DIR`, `EBOOKS_DIR`.
 
-async def _cached_get(key: str, ttl: int, fetcher):
-    async with _cache_lock:
-        # Critical section
-```
+Tool calling system (if touching tools)
+- Contract types are in `src/cognihub/tools/contract.py` (`tool_request` / `final`).
+- Tools must declare args schemas; executor enforces per-call timeout and output caps.
+- Side-effecting tools must be gated via confirmation tokens.
 
-### Error Handling
-
-- **HTTP Exceptions**: Use `HTTPException` from FastAPI for API errors
-- **Validation**: Raise `ValueError` for invalid input parameters
-- **Logging**: Use structured logging with appropriate levels
-- **Database**: Use context managers for connection handling
-- **Example**:
-```python
-if not messages or not model:
-    raise ValueError("Messages and model are required")
-
-if total_chars > 100000:
-    raise HTTPException(status_code=400, detail="Messages too long")
-
-logger.error(f"Failed to process request: {e}")
-```
-
-### Database Patterns
-
-- **Connection Management**: Use context managers (`_db()`) for transactions
-- **Pragma Settings**:
-  - `journal_mode=WAL`
-  - `synchronous=NORMAL`
-  - `foreign_keys=ON`
-  - `busy_timeout=5000`
-  - `temp_store=MEMORY`
-  - `cache_size=-20000`
-- **Migrations**: Use version-based migrations with `_get_user_version()` and `_set_user_version()`
-- **Row Factory**: Set `con.row_factory = sqlite3.Row` for dict-like access
-
-### Logging
-
-- **Configuration**: Use `logging.basicConfig()` with structured format
-- **Format**: `'%(asctime)s - %(name)s - %(levelname)s - %(message)s'`
-- **Levels**: INFO for general operations, ERROR for failures, DEBUG for development
-- **Logger Creation**: `logger = logging.getLogger(__name__)`
-
-### Configuration
-
-- **Environment Variables**: Use `os.getenv()` with sensible defaults
-- **Config Class**: Centralize configuration in `config.py`
-- **Type Conversion**: Convert strings to appropriate types (int, bool, etc.)
-- **Example**:
-```python
-self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
-self.web_allowed_hosts = os.getenv("WEB_ALLOWED_HOSTS", "")
-```
-
-### Security Considerations
-
-- **Input Validation**: Always validate and sanitize user inputs
-- **File Uploads**: Check file sizes, sanitize filenames, validate extensions
-- **Web Scraping**: Use allowed/blocked host lists for SSRF protection
-- **API Keys**: Support optional API key authentication
-- **SQL Injection**: Use parameterized queries (automatic with sqlite3)
-
-### Pydantic Models
-
-- **Base Models**: Extend `BaseModel` from pydantic
-- **Field Validation**: Use `Field()` for constraints and defaults
-- **Config**: Use `ConfigDict` for model configuration
-- **Example**:
-```python
-class ChatSettings(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    model: str = Field(default="llama3.1")
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    context: int = Field(default=4096, gt=0)
-```
-
-### API Design
-
-- **RESTful Endpoints**: Follow REST conventions
-- **Streaming Responses**: Use `StreamingResponse` for chat streaming
-- **File Responses**: Use `FileResponse` for static file serving
-- **JSON Responses**: Use `JSONResponse` for structured data
-- **Error Codes**: Use appropriate HTTP status codes (400, 404, 500, etc.)
-
-### Testing Patterns
-
-- **Test Structure**: Use descriptive function names starting with `test_`
-- **Assertions**: Use standard `assert` statements
-- **Mocking**: Mock external dependencies (HTTP calls, database connections)
-- **Fixtures**: Use pytest fixtures for setup/teardown
-- **Example**:
-```python
-def test_build_context_caps_and_dedupe():
-    results = [...]
-    sources, context = build_context(results, max_chars=5000, per_source_cap=1)
-    assert len(sources) == 2
-    assert "[D1]" in context[0]
-```
-
-### Documentation
-
-- **README**: Comprehensive setup and usage instructions
-- **Code Comments**: Minimal comments, focus on complex business logic
-- **Type Hints**: Serve as documentation for function signatures
-- **API Docs**: Auto-generated from FastAPI decorators
-
-### Tool Calling System
-
-- **Contract**: Strict JSON schema validation for tool requests/responses (tool_request/final)
-- **Registry**: Centralized tool registration with side-effect metadata and confirmation gating
-- **Executor**: Timeouts (12s), output caps (12k chars), comprehensive logging with SHA256 hashes
-- **Store**: SQLite logging of all tool executions with async I/O offloading (non-blocking)
-- **Built-ins**: web_search (network), doc_search (read-only), shell_exec (dangerous, opt-in) with dependency injection
-- **Integration**: All chats use tool contract loop - LLM returns JSON, tools execute, results fed back
-- **Security**: Result truncation (4k chars) prevents context explosion, request ID traceability
-- **Streaming**: Compatible with existing SSE format, tool results fed as system messages
-
-### Dependencies
-
-- **Core**: fastapi, uvicorn, httpx, pydantic
-- **Data Processing**: numpy, beautifulsoup4, lxml, readability-lxml
-- **UI**: textual, rich
-- **System**: psutil, requests
-- **Development**: pytest, mypy (for type checking)
-
-### File Structure
-
-```
-src/cognihub/
-├── app.py                 # FastAPI application
-├── config.py              # Configuration management
-├── stores/                # Database layer
-│   ├── chatstore.py
-│   ├── ragstore.py
-│   ├── webstore.py
-│   └── researchstore.py
-├── services/              # Business logic
-│   ├── chat.py
-│   ├── research.py
-│   ├── models.py
-│   └── ...
-└── tui/                   # Terminal UI
-    └── cognihub_tui.py
-```
-
-This guide ensures consistent development practices across the CogniHub codebase. Always run type checking and tests before committing changes.
+Where to look
+- API entrypoint: `src/cognihub/app.py` (and monorepo equivalent).
+- Tool runtime: `src/cognihub/tools/registry.py`, `src/cognihub/tools/executor.py`.
+- Stores (SQLite): `src/cognihub/stores/`.

@@ -65,6 +65,8 @@ def init_db():
             _migrate_3_fts_prefilter(con); _set_user_version(con, 3); v = 3
         if v < 4:
             _migrate_4_doc_meta(con); _set_user_version(con, 4); v = 4
+        if v < 5:
+            _migrate_5_doc_fields(con); _set_user_version(con, 5); v = 5
 
 def _migrate_1_baseline(con: sqlite3.Connection):
     con.execute("""
@@ -157,6 +159,27 @@ def _migrate_4_doc_meta(con: sqlite3.Connection):
         con.execute("ALTER TABLE docs ADD COLUMN group_name TEXT;")
     con.execute("CREATE INDEX IF NOT EXISTS idx_docs_group ON docs(group_name);")
 
+
+def _migrate_5_doc_fields(con: sqlite3.Connection):
+    cols_docs = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+    if "source" not in cols_docs:
+        con.execute("ALTER TABLE docs ADD COLUMN source TEXT;")
+    if "title" not in cols_docs:
+        con.execute("ALTER TABLE docs ADD COLUMN title TEXT;")
+    if "author" not in cols_docs:
+        con.execute("ALTER TABLE docs ADD COLUMN author TEXT;")
+    if "path" not in cols_docs:
+        con.execute("ALTER TABLE docs ADD COLUMN path TEXT;")
+    if "meta_json" not in cols_docs:
+        con.execute("ALTER TABLE docs ADD COLUMN meta_json TEXT;")
+
+    cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+    if "section" not in cols_chunks:
+        con.execute("ALTER TABLE chunks ADD COLUMN section TEXT;")
+
+    con.execute("CREATE INDEX IF NOT EXISTS idx_docs_source ON docs(source);")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_docs_path ON docs(path);")
+
 def _client() -> httpx.AsyncClient:
     global _http
     if _http is None:
@@ -224,7 +247,7 @@ def cosine(a: array, b: array) -> float:
 _sentence_split = re.compile(r"(?<=[.!?])\s+")
 _ws = re.compile(r"\s+")
 
-def chunk_text(text: str, max_chars: int = 1200, overlap: int = 200) -> list[str]:
+def chunk_text(text: str, max_chars: int = 4000, overlap: int = 700) -> list[str]:
     """
     Split text into chunks for embedding.
 
@@ -236,8 +259,8 @@ def chunk_text(text: str, max_chars: int = 1200, overlap: int = 200) -> list[str
 
     Args:
         text: Input text to chunk
-        max_chars: Maximum characters per chunk (default 1200)
-        overlap: Characters to overlap between chunks (default 200)
+        max_chars: Maximum characters per chunk (default 4000)
+        overlap: Characters to overlap between chunks (default 700)
 
     Returns:
         List of text chunks
@@ -291,7 +314,18 @@ def chunk_text(text: str, max_chars: int = 1200, overlap: int = 200) -> list[str
     
     return out
 
-async def add_document(filename: str, text: str, embed_model: str | None = None) -> int:
+async def add_document(
+    filename: str,
+    text: str,
+    embed_model: str | None = None,
+    *,
+    source: str | None = None,
+    title: str | None = None,
+    author: str | None = None,
+    path: str | None = None,
+    meta_json: str | None = None,
+    group_name: str | None = None,
+) -> int:
     text = text or ""
     if len(text.encode("utf-8", errors="ignore")) > MAX_DOC_BYTES:
         raise ValueError("Document too large")
@@ -320,30 +354,172 @@ async def add_document(filename: str, text: str, embed_model: str | None = None)
         if row:
             return int(row["id"])
 
-        cur = con.execute(
-            "INSERT INTO docs(filename, sha256, created_at, embed_model, embed_dim, weight, group_name) VALUES(?,?,?,?,?,1.0,NULL)",
-            (filename, sha, created_at, embed_model, embed_dim),
-        )
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+        if {"source", "title", "author", "path", "meta_json"}.issubset(cols):
+            cur = con.execute(
+                """
+                INSERT INTO docs(
+                  filename, sha256, created_at, embed_model, embed_dim,
+                  weight, group_name, source, title, author, path, meta_json
+                ) VALUES(?,?,?,?,?,1.0,?,?,?,?,?,?)
+                """,
+                (
+                    filename,
+                    sha,
+                    created_at,
+                    embed_model,
+                    embed_dim,
+                    (group_name or None),
+                    (source or None),
+                    (title or None),
+                    (author or None),
+                    (path or None),
+                    (meta_json or None),
+                ),
+            )
+        else:
+            cur = con.execute(
+                "INSERT INTO docs(filename, sha256, created_at, embed_model, embed_dim, weight, group_name) VALUES(?,?,?,?,?,1.0,NULL)",
+                (filename, sha, created_at, embed_model, embed_dim),
+            )
         doc_id = int(cur.lastrowid or 0)
+
+        cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+        has_section = "section" in cols_chunks
 
         for idx, (ch, emb) in enumerate(zip(chunks, embeddings)):
             n = _norm(emb)
             chunk_sha = _sha256_text(ch)
-            con.execute(
-                "INSERT INTO chunks(doc_id, chunk_index, text, emb, norm, chunk_sha) VALUES(?,?,?,?,?,?)",
-                (doc_id, idx, ch, _pack(emb), float(n), chunk_sha),
+            if has_section:
+                con.execute(
+                    "INSERT INTO chunks(doc_id, chunk_index, section, text, emb, norm, chunk_sha) VALUES(?,?,?,?,?,?,?)",
+                    (doc_id, idx, None, ch, _pack(emb), float(n), chunk_sha),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO chunks(doc_id, chunk_index, text, emb, norm, chunk_sha) VALUES(?,?,?,?,?,?)",
+                    (doc_id, idx, ch, _pack(emb), float(n), chunk_sha),
+                )
+        return doc_id
+
+
+async def add_document_sections(
+    filename: str,
+    sections: list[tuple[str | None, str]],
+    embed_model: str | None = None,
+    *,
+    source: str | None = None,
+    title: str | None = None,
+    author: str | None = None,
+    path: str | None = None,
+    meta_json: str | None = None,
+    group_name: str | None = None,
+    chunk_max_chars: int = 4000,
+    chunk_overlap_chars: int = 700,
+) -> int:
+    parts: list[str] = []
+    for _, txt in sections or []:
+        if txt:
+            parts.append(txt)
+    full_text = "\n\n".join(parts).strip()
+    if not full_text:
+        raise ValueError("No text to ingest")
+    if len(full_text.encode("utf-8", errors="ignore")) > MAX_DOC_BYTES:
+        raise ValueError("Document too large")
+
+    sha = _sha256_text(full_text)
+    created_at = _now()
+    embed_model = embed_model or DEFAULT_EMBED_MODEL
+
+    # Chunk per section so we can retain section labels.
+    chunk_rows: list[tuple[str | None, str]] = []
+    for section_label, txt in sections or []:
+        for ch in chunk_text(txt or "", max_chars=chunk_max_chars, overlap=chunk_overlap_chars):
+            if ch:
+                chunk_rows.append((section_label, ch))
+    if not chunk_rows:
+        raise ValueError("No text to ingest")
+
+    chunks_only = [ch for _, ch in chunk_rows]
+
+    embeddings: list[list[float]] = []
+    for i in range(0, len(chunks_only), EMBED_BATCH):
+        embeddings.extend(await embed_texts(chunks_only[i : i + EMBED_BATCH], embed_model))
+    if len(embeddings) != len(chunks_only):
+        raise RuntimeError("Embedding count mismatch")
+
+    embed_dim = len(embeddings[0]) if embeddings else 0
+    if embed_dim <= 0:
+        raise RuntimeError("Bad embedding dimension")
+
+    with _db() as con:
+        row = con.execute("SELECT id FROM docs WHERE sha256=?", (sha,)).fetchone()
+        if row:
+            return int(row["id"])
+
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+        if {"source", "title", "author", "path", "meta_json"}.issubset(cols):
+            cur = con.execute(
+                """
+                INSERT INTO docs(
+                  filename, sha256, created_at, embed_model, embed_dim,
+                  weight, group_name, source, title, author, path, meta_json
+                ) VALUES(?,?,?,?,?,1.0,?,?,?,?,?,?)
+                """,
+                (
+                    filename,
+                    sha,
+                    created_at,
+                    embed_model,
+                    embed_dim,
+                    (group_name or None),
+                    (source or None),
+                    (title or None),
+                    (author or None),
+                    (path or None),
+                    (meta_json or None),
+                ),
             )
+        else:
+            cur = con.execute(
+                "INSERT INTO docs(filename, sha256, created_at, embed_model, embed_dim, weight, group_name) VALUES(?,?,?,?,?,1.0,NULL)",
+                (filename, sha, created_at, embed_model, embed_dim),
+            )
+
+        doc_id = int(cur.lastrowid or 0)
+        cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+        has_section = "section" in cols_chunks
+
+        for idx, ((section_label, ch), emb) in enumerate(zip(chunk_rows, embeddings)):
+            n = _norm(emb)
+            chunk_sha = _sha256_text(ch)
+            if has_section:
+                con.execute(
+                    "INSERT INTO chunks(doc_id, chunk_index, section, text, emb, norm, chunk_sha) VALUES(?,?,?,?,?,?,?)",
+                    (doc_id, idx, (section_label or None), ch, _pack(emb), float(n), chunk_sha),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO chunks(doc_id, chunk_index, text, emb, norm, chunk_sha) VALUES(?,?,?,?,?,?)",
+                    (doc_id, idx, ch, _pack(emb), float(n), chunk_sha),
+                )
+
         return doc_id
 
 def list_documents():
     with _db() as con:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+        extra = ""
+        if {"source", "title", "author", "path", "meta_json"}.issubset(cols):
+            extra = ", d.source, d.title, d.author, d.path, d.meta_json"
         rows = con.execute("""
           SELECT d.id, d.filename, d.created_at, d.embed_model, d.embed_dim,
-                 d.weight, d.group_name,
-                 (SELECT COUNT(1) FROM chunks c WHERE c.doc_id=d.id) AS chunk_count
+                  d.weight, d.group_name,
+                  (SELECT COUNT(1) FROM chunks c WHERE c.doc_id=d.id) AS chunk_count
+                  {extra}
             FROM docs d
            ORDER BY d.created_at DESC
-        """).fetchall()
+        """.format(extra=extra)).fetchall()
         return [dict(r) for r in rows]
 
 def update_document(doc_id: int, *, weight: Optional[float] = None, group_name: Optional[str] = None, filename: Optional[str] = None):
@@ -449,10 +625,31 @@ def _prefilter_chunk_ids(con: sqlite3.Connection, query: str, doc_ids: Optional[
         return [int(r[0]) for r in con.execute(sql, params2).fetchall()]
 
 def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chunk_ids: Optional[list[int]]):
+    cols_docs = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+    cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+
+    select_cols = [
+        "c.id",
+        "c.doc_id",
+        "c.chunk_index",
+        "c.text",
+        "c.emb",
+        "c.norm",
+        "d.filename",
+        "d.weight",
+    ]
+    if "section" in cols_chunks:
+        select_cols.append("c.section")
+    for col in ("source", "title", "author", "path", "meta_json"):
+        if col in cols_docs:
+            select_cols.append(f"d.{col}")
+
+    sel = ", ".join(select_cols)
+
     if chunk_ids:
         qs = ",".join("?" for _ in chunk_ids)
         return con.execute(f"""
-          SELECT c.id, c.doc_id, c.chunk_index, c.text, c.emb, c.norm, d.filename, d.weight
+          SELECT {sel}
             FROM chunks c
             JOIN docs d ON d.id=c.doc_id
            WHERE c.id IN ({qs})
@@ -461,14 +658,14 @@ def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chun
     if doc_ids:
         qs = ",".join("?" for _ in doc_ids)
         return con.execute(f"""
-          SELECT c.id, c.doc_id, c.chunk_index, c.text, c.emb, c.norm, d.filename, d.weight
+          SELECT {sel}
             FROM chunks c
             JOIN docs d ON d.id=c.doc_id
            WHERE c.doc_id IN ({qs})
         """, tuple(doc_ids)).fetchall()
 
-    return con.execute("""
-      SELECT c.id, c.doc_id, c.chunk_index, c.text, c.emb, c.norm, d.filename, d.weight
+    return con.execute(f"""
+      SELECT {sel}
         FROM chunks c
         JOIN docs d ON d.id=c.doc_id
     """).fetchall()
@@ -521,6 +718,8 @@ async def retrieve(
     query: str,
     top_k: int = 6,
     doc_ids: Optional[list[int]] = None,
+    group_name: str | None = None,
+    source: str | None = None,
     embed_model: str | None = None,
     use_mmr: Optional[bool] = None,
     mmr_lambda: float = MMR_LAMBDA,
@@ -533,6 +732,26 @@ async def retrieve(
     qdim = len(qv)
 
     with _db() as con:
+        # Optional doc scoping by group/source (used for epub/kiwix filtering).
+        if (group_name or source) and not doc_ids:
+            cols_docs = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+            where = []
+            params: list[Any] = []
+            if group_name:
+                where.append("group_name=?")
+                params.append(str(group_name))
+            if source and "source" in cols_docs:
+                where.append("source=?")
+                params.append(str(source))
+            if where:
+                rows = con.execute(
+                    "SELECT id FROM docs WHERE " + " AND ".join(where),
+                    params,
+                ).fetchall()
+                doc_ids = [int(r[0]) for r in rows]
+                if not doc_ids:
+                    return []
+
         chunk_ids = None
         if USE_PREFILTER:
             try:
@@ -555,7 +774,7 @@ async def retrieve(
 
             score = base * weight
 
-            scored.append({
+            item = {
                 "chunk_id": int(r["id"]),
                 "doc_id": int(r["doc_id"]),
                 "filename": r["filename"],
@@ -564,7 +783,14 @@ async def retrieve(
                 "text": r["text"],
                 "_vec": v if use_mmr else None,
                 "doc_weight": weight,
-            })
+            }
+            keys = set(r.keys())
+            if "section" in keys:
+                item["section"] = r["section"]
+            for col in ("source", "title", "author", "path", "meta_json"):
+                if col in keys:
+                    item[col] = r[col]
+            scored.append(item)
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 

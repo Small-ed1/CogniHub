@@ -35,6 +35,16 @@ def main() -> int:
     embed_model = _prompt("Embedding model", "nomic-embed-text")
     chat_model = _prompt("Default chat model", "llama3.1")
 
+    print("")
+    print("Optional model role overrides (leave blank to keep defaults)")
+    decider_model = _prompt("Decider model (optional; /api/decide_model)", "").strip()
+    rag_router_model = _prompt("RAG router model (optional; rag.auto_route)", "").strip()
+    rag_rerank_model = _prompt("RAG rerank model (optional; rag.rerank)", "").strip()
+    rag_synth_model = _prompt("RAG synthesis model (optional; rag.synth)", "").strip()
+    research_planner_model = _prompt("Research planner model (optional)", "").strip()
+    research_verifier_model = _prompt("Research verifier model (optional)", "").strip()
+    research_synth_model = _prompt("Research synth model (optional)", "").strip()
+
     use_kiwix = _prompt_bool("Use Kiwix offline ZIMs?", default=False)
     kiwix_url = ""
     kiwix_zim_dir = ""
@@ -60,6 +70,22 @@ def main() -> int:
     lines.append(f"OLLAMA_URL={ollama_url}")
     lines.append(f"EMBED_MODEL={embed_model}")
     lines.append(f"DEFAULT_CHAT_MODEL={chat_model}")
+
+    if decider_model:
+        lines.append(f"DECIDER_MODEL={decider_model}")
+    if rag_router_model:
+        lines.append(f"RAG_ROUTER_MODEL={rag_router_model}")
+    if rag_rerank_model:
+        lines.append(f"RAG_RERANK_MODEL={rag_rerank_model}")
+    if rag_synth_model:
+        lines.append(f"RAG_SYNTH_MODEL={rag_synth_model}")
+
+    if research_planner_model:
+        lines.append(f"RESEARCH_PLANNER_MODEL={research_planner_model}")
+    if research_verifier_model:
+        lines.append(f"RESEARCH_VERIFIER_MODEL={research_verifier_model}")
+    if research_synth_model:
+        lines.append(f"RESEARCH_SYNTH_MODEL={research_synth_model}")
 
     if use_kiwix:
         lines.append(f"KIWIX_URL={kiwix_url}")

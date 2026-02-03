@@ -24,6 +24,9 @@ class Config:
         self.tool_db = os.getenv("TOOL_DB", str(data_dir / "tool.sqlite3"))
         
         self.decider_model = os.getenv("DECIDER_MODEL")
+        self.rag_router_model = os.getenv("RAG_ROUTER_MODEL")
+        self.rag_rerank_model = os.getenv("RAG_RERANK_MODEL")
+        self.rag_synth_model = os.getenv("RAG_SYNTH_MODEL")
         self.research_planner_model = os.getenv("RESEARCH_PLANNER_MODEL")
         self.research_verifier_model = os.getenv("RESEARCH_VERIFIER_MODEL")
         self.research_synth_model = os.getenv("RESEARCH_SYNTH_MODEL")

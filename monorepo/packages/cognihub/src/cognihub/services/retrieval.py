@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 from typing import Any, Optional
 
 from ..stores import ragstore, webstore
@@ -35,22 +36,31 @@ class DocRetrievalProvider(RetrievalProvider):
         doc_ids = kwargs.get("doc_ids")
         use_mmr = kwargs.get("use_mmr")
         mmr_lambda = kwargs.get("mmr_lambda", 0.75)
+        group_name = kwargs.get("group_name")
+        source = kwargs.get("source")
         hits = await ragstore.retrieve(
             query,
             top_k=top_k,
             doc_ids=doc_ids,
+            group_name=group_name,
+            source=source,
             embed_model=embed_model,
             use_mmr=use_mmr,
             mmr_lambda=mmr_lambda,
         )
         results = []
         for h in hits:
+            doc_title = h.get("title") or h.get("filename")
+            section = h.get("section")
+            display = doc_title
+            if section:
+                display = f"{doc_title} — {section}"
             results.append(
                 RetrievalResult(
                     source_type="doc",
                     ref_id=f"doc:{h['chunk_id']}",
                     chunk_id=int(h["chunk_id"]),
-                    title=h.get("filename"),
+                    title=display,
                     url=None,
                     domain=None,
                     score=float(h.get("score") or 0.0),
@@ -59,6 +69,12 @@ class DocRetrievalProvider(RetrievalProvider):
                         "doc_id": h.get("doc_id"),
                         "chunk_index": h.get("chunk_index"),
                         "doc_weight": h.get("doc_weight", 1.0),
+                        "filename": h.get("filename"),
+                        "title": h.get("title"),
+                        "author": h.get("author"),
+                        "path": h.get("path"),
+                        "source": h.get("source"),
+                        "section": h.get("section"),
                     },
                 )
             )
@@ -109,47 +125,106 @@ class KiwixRetrievalProvider(RetrievalProvider):
         if not results:
             return []
 
-        pages = []
-        for item in results:
-            page = await kiwix.fetch_page(self._base_url, item.get("path") or item.get("url") or "")
-            if not page:
-                continue
-            pages.append({
-                "title": item.get("title") or item.get("path"),
-                "path": item.get("path"),
-                "url": page.get("url"),
-                "domain": self._base_url.replace("http://", "").replace("https://", ""),
-                "text": page.get("text") or "",
-            })
-        if not pages:
-            return []
+        persist = bool(kwargs.get("persist", False))
+        pages = int(kwargs.get("pages") or 4)
+        pages = max(1, min(pages, 10))
 
         embed_model = embed_model or ragstore.DEFAULT_EMBED_MODEL
-        query_emb = (await ragstore.embed_texts([q], model=embed_model))[0]
-        qvec = ragstore.embedding_to_array(query_emb)
+        domain = self._base_url.replace("http://", "").replace("https://", "")
 
-        texts: list[str] = [str(p.get("text") or "") for p in pages]
-        embeddings = await ragstore.embed_texts(texts, model=embed_model)
+        if not persist:
+            # Fast path: score fetched pages in-memory.
+            pages_meta = []
+            for item in results[:pages]:
+                path = item.get("path") or item.get("url") or ""
+                page = await kiwix.fetch_page(self._base_url, path)
+                if not page:
+                    continue
+                pages_meta.append({
+                    "title": item.get("title") or item.get("path"),
+                    "path": item.get("path"),
+                    "url": page.get("url"),
+                    "domain": domain,
+                    "text": page.get("text") or "",
+                })
+            if not pages_meta:
+                return []
 
-        items: list[RetrievalResult] = []
-        for meta, emb in zip(pages, embeddings):
-            vec = ragstore.embedding_to_array(emb)
-            score = float(ragstore.cosine(qvec, vec))
-            url = str(meta.get("url") or "")
-            chunk_id = int(hashlib.sha256(url.encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
-            items.append(
+            query_emb = (await ragstore.embed_texts([q], model=embed_model))[0]
+            qvec = ragstore.embedding_to_array(query_emb)
+            texts: list[str] = [str(p.get("text") or "") for p in pages_meta]
+            embeddings = await ragstore.embed_texts(texts, model=embed_model)
+
+            items: list[RetrievalResult] = []
+            for meta, emb in zip(pages_meta, embeddings):
+                vec = ragstore.embedding_to_array(emb)
+                score = float(ragstore.cosine(qvec, vec))
+                url = str(meta.get("url") or "")
+                chunk_id = int(hashlib.sha256(url.encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
+                items.append(
+                    RetrievalResult(
+                        source_type="kiwix",
+                        ref_id=f"kiwix:{chunk_id}",
+                        chunk_id=chunk_id,
+                        title=meta.get("title"),
+                        url=meta.get("url"),
+                        domain=meta.get("domain"),
+                        score=score,
+                        text=meta.get("text") or "",
+                        meta={"path": meta.get("path")},
+                    )
+                )
+            items.sort(key=lambda x: x.score, reverse=True)
+            return items[:top_k]
+
+        # Index-on-demand: fetch a handful of pages, ingest into SQLite, then vector-search them.
+        ingested_doc_ids: list[int] = []
+        for item in results[:pages]:
+            path = item.get("path") or item.get("url") or ""
+            page = await kiwix.fetch_page(self._base_url, path)
+            if not page:
+                continue
+            text = (page.get("text") or "").strip()
+            if not text:
+                continue
+            title = str(item.get("title") or path or "kiwix")
+            url = str(page.get("url") or "")
+            meta_json = json.dumps({"source": "kiwix", "path": path, "url": url}, ensure_ascii=False)
+            doc_id = await ragstore.add_document(
+                f"kiwix:{title}",
+                text,
+                embed_model=embed_model,
+                source="kiwix",
+                title=title,
+                author=None,
+                path=url or path,
+                meta_json=meta_json,
+                group_name="kiwix",
+            )
+            ingested_doc_ids.append(int(doc_id))
+
+        if not ingested_doc_ids:
+            return []
+
+        hits = await ragstore.retrieve(q, top_k=top_k, doc_ids=ingested_doc_ids, embed_model=embed_model)
+
+        out: list[RetrievalResult] = []
+        for h in hits:
+            out.append(
                 RetrievalResult(
                     source_type="kiwix",
-                    ref_id=f"kiwix:{chunk_id}",
-                    chunk_id=chunk_id,
-                    title=meta.get("title"),
-                    url=meta.get("url"),
-                    domain=meta.get("domain"),
-                    score=score,
-                    text=meta.get("text") or "",
-                    meta={"path": meta.get("path")},
+                    ref_id=f"kiwix:{h['chunk_id']}",
+                    chunk_id=int(h["chunk_id"]),
+                    title=h.get("title") or h.get("filename"),
+                    url=h.get("path"),
+                    domain=domain,
+                    score=float(h.get("score") or 0.0),
+                    text=h.get("text") or "",
+                    meta={
+                        "path": h.get("path"),
+                        "doc_id": h.get("doc_id"),
+                        "chunk_index": h.get("chunk_index"),
+                    },
                 )
             )
-
-        items.sort(key=lambda x: x.score, reverse=True)
-        return items[:top_k]
+        return out

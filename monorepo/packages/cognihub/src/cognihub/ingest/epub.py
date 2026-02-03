@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -16,6 +17,12 @@ class EpubInfo:
     path: str
     title: str
     authors: list[str]
+
+
+@dataclass(frozen=True)
+class EpubSection:
+    label: str | None
+    text: str
 
 
 def _default_library_dir() -> Path:
@@ -34,7 +41,7 @@ def _extract_text_from_html(html: str) -> str:
     return "\n".join(lines)
 
 
-def _read_epub(epub_path: Path) -> tuple[EpubInfo, str]:
+def _read_epub(epub_path: Path) -> tuple[EpubInfo, list[EpubSection]]:
     book = epub.read_epub(str(epub_path))
 
     title = ""
@@ -59,18 +66,28 @@ def _read_epub(epub_path: Path) -> tuple[EpubInfo, str]:
     except Exception:
         pass
 
-    parts: list[str] = []
-    for item in book.get_items_of_type(ITEM_DOCUMENT):
+    sections: list[EpubSection] = []
+    for idx, item in enumerate(book.get_items_of_type(ITEM_DOCUMENT), start=1):
         try:
             raw = item.get_content()
             html = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else str(raw)
             txt = _extract_text_from_html(html)
-            if txt:
-                parts.append(txt)
+            if not txt:
+                continue
+
+            label = None
+            try:
+                name = getattr(item, "get_name", None)
+                if callable(name):
+                    label = str(name() or "").strip() or None
+            except Exception:
+                label = None
+            if not label:
+                label = f"section {idx}"
+
+            sections.append(EpubSection(label=label, text=txt))
         except Exception:
             continue
-
-    text = "\n\n".join(parts).strip()
 
     rel = str(epub_path)
     try:
@@ -83,7 +100,7 @@ def _read_epub(epub_path: Path) -> tuple[EpubInfo, str]:
         title=title or epub_path.stem,
         authors=authors,
     )
-    return info, text
+    return info, sections
 
 
 def list_epubs(*, query: Optional[str] = None, limit: int = 25, library_dir: Optional[str] = None) -> list[dict[str, Any]]:
@@ -125,19 +142,30 @@ async def ingest_epub(
     if not p.exists() or not p.is_file():
         return {"ok": False, "error": f"epub not found: {p}"}
 
-    info, text = _read_epub(p)
-    if not text:
+    info, sections = _read_epub(p)
+    if not sections:
         return {"ok": False, "error": "no extractable text"}
 
     filename = f"epub:{info.title}"
     if info.authors:
         filename = f"epub:{info.title} - {', '.join(info.authors)}"
 
-    doc_id = await ragstore.add_document(filename, text, embed_model=embed_model)
-    try:
-        ragstore.update_document(doc_id, group_name="epub", filename=filename)
-    except Exception:
-        pass
+    meta_json = json.dumps(  # stored as string; keep it small
+        {"source": "epub", "title": info.title, "authors": info.authors, "path": info.path},
+        ensure_ascii=False,
+    )
+
+    doc_id = await ragstore.add_document_sections(
+        filename,
+        [(s.label, s.text) for s in sections],
+        embed_model=embed_model,
+        source="epub",
+        title=info.title,
+        author=", ".join(info.authors) if info.authors else None,
+        path=info.path,
+        meta_json=meta_json,
+        group_name="epub",
+    )
 
     return {
         "ok": True,

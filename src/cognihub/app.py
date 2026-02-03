@@ -817,11 +817,54 @@ async def decide_model(req: DecideReq):
 class RagConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
     enabled: bool = False
-    top_k: int = Field(default=6, ge=1, le=20)
+    # retrieval selection
+    use_docs: bool = True
+    use_web: bool = False
+    use_kiwix: bool = False
+
+    # kiwix (ZIM) behavior
+    kiwix_persist: bool = True
+    kiwix_pages: int = Field(default=4, ge=1, le=10)
+
+    # optional router (choose sources + rewrite queries)
+    auto_route: bool = False
+    router_model: str | None = None
+    router_timeout_sec: float = Field(default=12.0, ge=3.0, le=60.0)
+
+    # retrieval sizing
+    top_k: int = Field(default=12, ge=1, le=20)
+    doc_top_k: int | None = Field(default=None, ge=1, le=40)
+    web_top_k: int | None = Field(default=None, ge=1, le=40)
+    kiwix_top_k: int | None = Field(default=None, ge=1, le=40)
+    per_source_cap: int = Field(default=6, ge=1, le=20)
+    max_context_chars: int = Field(default=8000, ge=2000, le=60000)
+
+    # doc constraints
     doc_ids: list[int] | None = None
+    doc_group: str | None = None
+    doc_source: str | None = None
+
+    # web constraints
+    domain_whitelist: list[str] | None = None
+
+    # embedding + ranking
     embed_model: str | None = None
     use_mmr: bool = False
     mmr_lambda: float = 0.75
+
+    # quality knobs
+    rerank: bool = False
+    rerank_model: str | None = None
+    rerank_keep_n: int = Field(default=24, ge=4, le=60)
+
+    require_citations: bool = True
+    citation_retry: bool = True
+    citation_retry_timeout_sec: float = Field(default=20.0, ge=5.0, le=120.0)
+
+    # optional synthesis pass (use a different model for final answer)
+    synth: bool = False
+    synth_model: str | None = None
+    synth_timeout_sec: float = Field(default=60.0, ge=5.0, le=600.0)
 
 class ChatReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
