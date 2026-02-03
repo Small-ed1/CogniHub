@@ -191,8 +191,8 @@ TOOL_SPECS: List[Dict[str, Any]] = [
             "properties": {
                 "zim_dir": {
                     "type": "string",
-                    "description": "ZIM directory path (default '/mnt/HDD/zims')",
-                    "default": "/mnt/HDD/zims",
+                    "description": "ZIM directory path (default '~/zims')",
+                    "default": "~/zims",
                 },
             },
         },

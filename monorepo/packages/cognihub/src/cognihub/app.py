@@ -331,7 +331,6 @@ async def api_kiwix_page(path: str = Query(..., min_length=1)):
 
 @app.get("/api/kiwix/zims")
 async def api_kiwix_zims(zim_dir: Optional[str] = Query(default=None)):
-    # Defaults to /mnt/HDD/zims via config + ollama-cli defaults.
     zims = await kiwix_list_zims(zim_dir or config.config.kiwix_zim_dir)
     return {"zim_dir": zim_dir or config.config.kiwix_zim_dir, "zims": zims}
 
@@ -341,33 +340,39 @@ class EpubIngestReq(BaseModel):
     path: Optional[str] = None
     query: Optional[str] = None
     limit: int = 1
+    library_dir: Optional[str] = None
 
 
 @app.get("/api/epubs")
-async def api_epubs_list(q: Optional[str] = Query(default=None), limit: int = Query(default=25, ge=1, le=200)):
+async def api_epubs_list(
+    q: Optional[str] = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=200),
+    library_dir: Optional[str] = Query(default=None, max_length=1024),
+):
     items = await asyncio.to_thread(
         epub_ingest.list_epubs,
         query=q,
         limit=limit,
-        library_dir=config.config.ebooks_dir,
+        library_dir=library_dir or config.config.ebooks_dir,
     )
-    return {"library_dir": config.config.ebooks_dir, "items": items}
+    return {"library_dir": library_dir or config.config.ebooks_dir, "items": items}
 
 
 @app.post("/api/epubs/ingest")
 async def api_epubs_ingest(req: EpubIngestReq):
+    library_dir = (req.library_dir or "").strip() or config.config.ebooks_dir
     if req.path:
         return await epub_ingest.ingest_epub(
             path=req.path,
             embed_model=DEFAULT_EMBED_MODEL,
-            library_dir=config.config.ebooks_dir,
+            library_dir=library_dir,
         )
     if req.query:
         return await epub_ingest.ingest_epubs_by_query(
             query=req.query,
             limit=req.limit,
             embed_model=DEFAULT_EMBED_MODEL,
-            library_dir=config.config.ebooks_dir,
+            library_dir=library_dir,
         )
     raise HTTPException(status_code=400, detail="path or query required")
 

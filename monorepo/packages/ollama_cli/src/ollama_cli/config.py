@@ -8,7 +8,7 @@ from typing import Optional
 DEFAULT_BASE_URL = "http://localhost:11434"
 DEFAULT_SEARXNG_URL = "http://localhost:8080/search"
 DEFAULT_KIWIX_URL = "http://127.0.0.1:8081"
-DEFAULT_KIWIX_ZIM_DIR = "/mnt/HDD/zims"
+DEFAULT_KIWIX_ZIM_DIR = "~/zims"
 DEFAULT_TIMEOUT = 60
 DEFAULT_CACHE_MINUTES = 30
 DEFAULT_WEB_SEARCH_COUNT = 8
@@ -94,6 +94,10 @@ def resolve_config_file(path: str = DEFAULT_CONFIG_FILE) -> str:
     return os.path.expanduser(path)
 
 
+def _expand_path(path: str) -> str:
+    return os.path.expanduser(path)
+
+
 def load_config_from_env() -> AppConfig:
     """Load configuration from environment variables."""
     base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_BASE_URL)
@@ -102,7 +106,7 @@ def load_config_from_env() -> AppConfig:
 
     searxng_url = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL)
     kiwix_url = os.getenv("KIWIX_URL", DEFAULT_KIWIX_URL)
-    kiwix_zim_dir = os.getenv("KIWIX_ZIM_DIR", DEFAULT_KIWIX_ZIM_DIR)
+    kiwix_zim_dir = _expand_path(os.getenv("KIWIX_ZIM_DIR", DEFAULT_KIWIX_ZIM_DIR))
     cache_minutes = _env_int("OLLAMA_CACHE_MINUTES", DEFAULT_CACHE_MINUTES)
 
     web_search_count = _env_int("OLLAMA_WEB_SEARCH_COUNT", DEFAULT_WEB_SEARCH_COUNT)

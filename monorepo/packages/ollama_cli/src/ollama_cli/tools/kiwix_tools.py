@@ -421,7 +421,7 @@ class KiwixTools:
         if not zim_dir:
             raise KiwixToolError("zim_dir is required")
 
-        p = Path(zim_dir)
+        p = Path(os.path.expanduser(zim_dir))
         if not p.exists() or not p.is_dir():
             raise KiwixToolError(f"zim_dir not found or not a directory: {zim_dir}")
 
@@ -551,7 +551,7 @@ def tool_kiwix_list_zims(kiwix_tools: KiwixTools, zim_dir: str = DEFAULT_KIWIX_Z
     
     Args:
         kiwix_tools: KiwixTools instance
-        zim_dir: Directory containing ZIM files (default '/mnt/HDD/zims')
+        zim_dir: Directory containing ZIM files (default '~/zims')
         
     Returns:
         JSON string with ZIM file list

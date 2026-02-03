@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from functools import lru_cache
 from typing import Any, Optional, Tuple
 from urllib.parse import quote
@@ -108,7 +109,7 @@ async def fetch_page(base_url: str, path: str) -> dict[str, Any] | None:
 
 
 async def list_zims(zim_dir: Optional[str] = None) -> list[dict[str, Any]]:
-    zim_dir = (zim_dir or "").strip() or DEFAULT_KIWIX_ZIM_DIR
+    zim_dir = os.path.expanduser((zim_dir or "").strip() or DEFAULT_KIWIX_ZIM_DIR)
     # list_zims doesn't require a running kiwix server; base_url is irrelevant.
     try:
         return await asyncio.to_thread(_tools("http://127.0.0.1:8081").list_zims, zim_dir)
