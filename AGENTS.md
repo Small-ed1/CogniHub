@@ -3,7 +3,6 @@
 This guide is for agentic coding assistants working in this repository.
 
 Notes
-- The repo is mid-migration; the actively-developed setup is under `monorepo/`.
 - Prefer small, focused changes that match existing patterns.
 
 Cursor/Copilot Rules
@@ -11,21 +10,21 @@ Cursor/Copilot Rules
 
 ## Build / Run / Lint / Test
 
-Recommended setup (monorepo)
+Recommended setup
 ```bash
-cd monorepo
 python -m venv .venv
-source .venv/bin/activate
+
+# Activate the venv
+# - Windows (PowerShell): .venv\\Scripts\\Activate.ps1
+# - Windows (cmd.exe):   .venv\\Scripts\\activate.bat
+# - macOS/Linux:         source .venv/bin/activate
 
 python -m pip install -U pip
-python -m pip install -e packages/ollama_cli
-python -m pip install -e packages/cognihub
+python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
 ```
 
-Useful helper scripts (monorepo)
+Useful helper scripts
 ```bash
-cd monorepo
-
 # generate a local .env (paths/endpoints) without committing secrets
 python scripts/setup_env.py
 
@@ -39,22 +38,17 @@ python scripts/setup_links.py
 Run server + UI
 ```bash
 # FastAPI (dev)
-cd monorepo
 uvicorn cognihub.app:app --reload --host 127.0.0.1 --port 8000
 
 # Terminal UI
-cd monorepo
 cognihub-tui
 
 # CLI
-cd monorepo
 cognihub --help
 ```
 
-Tests (monorepo)
+Tests
 ```bash
-cd monorepo
-
 # all tests
 python -m pytest -q
 
@@ -68,35 +62,17 @@ python -m pytest packages/cognihub/tests/test_context_builder.py::test_build_con
 python -m pytest -k "context_builder or tool_runtime" -q
 ```
 
-Tests (legacy root layout)
-```bash
-# all tests
-PYTHONPATH=src python -m pytest -q
-
-# single test
-PYTHONPATH=src python -m pytest tests/test_tool_runtime.py::test_tool_executor_timeout -q
-```
-
 Type checking / sanity checks
 ```bash
-cd monorepo
-
 # mypy (kept permissive; tighten only when scoped)
 python -m mypy packages/cognihub/src/cognihub --ignore-missing-imports
 python -m mypy packages/ollama_cli/src/ollama_cli --ignore-missing-imports
-
-# quick syntax check (legacy root layout)
-python -m py_compile src/cognihub/app.py src/cognihub/stores/*.py src/cognihub/services/*.py
 ```
-
-Legacy (repo root) notes
-- Root `src/cognihub/` still runs; prefer monorepo for new work.
-- If you run from root without installing, use `PYTHONPATH=src`.
 
 ## Code Style Guidelines
 
 Python version
-- Target Python 3.14+ in `monorepo/` (the actively-developed packaging).
+- Target Python 3.14+.
 
 Imports
 - Use `from __future__ import annotations` at the top of modules with type hints.
@@ -142,15 +118,15 @@ Security + safety
 - Keep tool outputs bounded (truncate + hash for logs).
 
 Configuration
-- Runtime config lives in `src/cognihub/config.py` (monorepo mirrors this).
+- Runtime config lives in `packages/cognihub/src/cognihub/config.py`.
 - Common env vars: `OLLAMA_URL`, `DEFAULT_CHAT_MODEL`, `EMBED_MODEL`, `KIWIX_URL`, `KIWIX_ZIM_DIR`, `EBOOKS_DIR`.
 
 Tool calling system (if touching tools)
-- Contract types are in `src/cognihub/tools/contract.py` (`tool_request` / `final`).
+- Contract types are in `packages/cognihub/src/cognihub/tools/contract.py` (`tool_request` / `final`).
 - Tools must declare args schemas; executor enforces per-call timeout and output caps.
 - Side-effecting tools must be gated via confirmation tokens.
 
 Where to look
-- API entrypoint: `src/cognihub/app.py` (and monorepo equivalent).
-- Tool runtime: `src/cognihub/tools/registry.py`, `src/cognihub/tools/executor.py`.
-- Stores (SQLite): `src/cognihub/stores/`.
+- API entrypoint: `packages/cognihub/src/cognihub/app.py`.
+- Tool runtime: `packages/cognihub/src/cognihub/tools/registry.py`, `packages/cognihub/src/cognihub/tools/executor.py`.
+- Stores (SQLite): `packages/cognihub/src/cognihub/stores/`.

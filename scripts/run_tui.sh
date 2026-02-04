@@ -1,18 +1,24 @@
 #!/bin/bash
-cd "$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Check if API is running
 if ! curl -sf http://127.0.0.1:8000/health 2>/dev/null; then
     echo "Warning: API server may not be running."
-    echo "Start with: sudo systemctl start cognihub"
-    echo "Or run manually: uvicorn src.cognihub.app:app --reload --host 0.0.0.0 --port 8000"
+    echo "Start with: scripts/servers.sh start"
+    echo "Or run manually: uvicorn cognihub.app:app --reload --host 0.0.0.0 --port 8000"
     echo ""
 fi
 
 # Activate venv and run TUI
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    python3 src/cognihub/tui/cognihub_tui.py
+cd "$APP_DIR"
+
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+    cognihub-tui
 else
-    echo "Virtual environment not found. Run: python3 src/cognihub/tui/cognihub_tui.py"
+    echo "Virtual environment not found. Create it with:"
+    echo "  python3 -m venv .venv"
+    echo "  source .venv/bin/activate"
+    echo "  python -m pip install -e \"packages/ollama_cli[dev]\" -e \"packages/cognihub[dev]\""
 fi

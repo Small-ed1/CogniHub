@@ -17,9 +17,7 @@ dist/
 build/
 src/*.egg-info/
 
-# Monorepo staging workspace
-monorepo/.venv/
-monorepo/data/
-monorepo/.mypy_cache/
-monorepo/.pytest_cache/
-monorepo/.env
+# Local virtualenv / caches
+.venv/
+.mypy_cache/
+.pytest_cache/

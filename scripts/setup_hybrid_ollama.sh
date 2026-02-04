@@ -13,8 +13,8 @@ echo "🚀 Setting up Hybrid Ollama Infrastructure..."
 mkdir -p "$USER_HOME/.config/systemd/user"
 
 # Install service files
-cp "$SCRIPT_DIR/systemd/ollama-gpu@.service" "$USER_HOME/.config/systemd/user/"
-cp "$SCRIPT_DIR/systemd/ollama-cpu@.service" "$USER_HOME/.config/systemd/user/"
+cp "$SCRIPT_DIR/../systemd/ollama-gpu@.service" "$USER_HOME/.config/systemd/user/"
+cp "$SCRIPT_DIR/../systemd/ollama-cpu@.service" "$USER_HOME/.config/systemd/user/"
 
 # Reload systemd
 systemctl --user daemon-reload
@@ -89,4 +89,4 @@ echo "   export OLLAMA_GPU_URL=http://127.0.0.1:11434"
 echo "   export OLLAMA_CPU_URL=http://127.0.0.1:11435"
 echo ""
 echo "📊 Check status:"
-echo "   python3 $SCRIPT_DIR/src/cognihub/services/hybrid_router.py --check"
+echo "   python3 $SCRIPT_DIR/../packages/cognihub/src/cognihub/services/hybrid_router.py --check"

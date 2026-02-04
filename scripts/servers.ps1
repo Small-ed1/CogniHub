@@ -7,6 +7,11 @@ $FastApiPidFile = Join-Path $AppDir "fastapi.pid"
 $OllamaPidFile = Join-Path $AppDir "ollama.pid"
 $FastApiLog = Join-Path $AppDir "logs\fastapi.log"
 $OllamaLog = Join-Path $AppDir "logs\ollama.log"
+$EnvFile = Join-Path $AppDir ".env"
+$VenvPython = Join-Path $AppDir ".venv\Scripts\python.exe"
+$PythonExe = if (Test-Path $VenvPython) { $VenvPython } else { "python" }
+
+New-Item -ItemType Directory -Force -Path (Join-Path $AppDir "logs") | Out-Null
 
 function Kill-PidFile {
     param($PidFile, $Name)
@@ -31,7 +36,7 @@ function Kill-Existing {
 
 function Start-Ollama {
     Write-Host "Starting Ollama..."
-    $process = Start-Process -FilePath "cmd" -ArgumentList "/c", "ollama serve >> $OllamaLog 2>&1" -WindowStyle Hidden -PassThru
+    $process = Start-Process -WorkingDirectory $AppDir -FilePath "cmd" -ArgumentList "/c", "ollama serve >> $OllamaLog 2>&1" -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 2
     $ollamaPid = Get-Process -Name "ollama" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id
     if ($ollamaPid) {
@@ -44,7 +49,9 @@ function Start-Ollama {
 
 function Start-FastApi {
     Write-Host "Starting FastAPI..."
-    $process = Start-Process -FilePath "cmd" -ArgumentList "/c", "python -m uvicorn app:app --host 0.0.0.0 --port 8000 >> $FastApiLog 2>&1" -WindowStyle Hidden -PassThru
+    $envArg = if (Test-Path $EnvFile) { "--env-file .env" } else { "" }
+    $cmd = "\"$PythonExe\" -m uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 $envArg >> $FastApiLog 2>&1"
+    $process = Start-Process -WorkingDirectory $AppDir -FilePath "cmd" -ArgumentList "/c", $cmd -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 2
     $fastapiPid = Get-Process -Name "python" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id
     if ($fastapiPid) {

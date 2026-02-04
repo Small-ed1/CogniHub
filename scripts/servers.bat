@@ -1,11 +1,13 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set "APP_DIR=%~dp0"
-set "FASTAPI_PID_FILE=%APP_DIR%fastapi.pid"
-set "OLLAMA_PID_FILE=%APP_DIR%ollama.pid"
-set "FASTAPI_LOG=%APP_DIR%logs\fastapi.log"
-set "OLLAMA_LOG=%APP_DIR%logs\ollama.log"
+for %%I in ("%~dp0..") do set "APP_DIR=%%~fI"
+set "FASTAPI_PID_FILE=%APP_DIR%\fastapi.pid"
+set "OLLAMA_PID_FILE=%APP_DIR%\ollama.pid"
+set "FASTAPI_LOG=%APP_DIR%\logs\fastapi.log"
+set "OLLAMA_LOG=%APP_DIR%\logs\ollama.log"
+
+if not exist "%APP_DIR%\logs" mkdir "%APP_DIR%\logs"
 
 cd /d "%APP_DIR%"
 
@@ -109,7 +111,7 @@ goto :eof
 
 :start_ollama
 echo Starting Ollama...
-start /b cmd /c "ollama serve > "%OLLAMA_LOG%" 2>&1"
+start /b cmd /c "ollama serve > ""%OLLAMA_LOG%"" 2>&1"
 timeout /t 2 >nul
 for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq ollama.exe" /NH') do set OLLAMA_PID=%%i
 if defined OLLAMA_PID (
@@ -122,7 +124,7 @@ goto :eof
 
 :start_fastapi
 echo Starting FastAPI...
-start /b cmd /c "uvicorn bin.app:app --host 0.0.0.0 --port 8000 > "%FASTAPI_LOG%" 2>&1"
+start /b cmd /c "uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 > ""%FASTAPI_LOG%"" 2>&1"
 timeout /t 2 >nul
 for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq uvicorn.exe" /NH') do set FASTAPI_PID=%%i
 if defined FASTAPI_PID (

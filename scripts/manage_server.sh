@@ -2,7 +2,23 @@
 # CogniHub Server Management Script
 
 PID_FILE="/tmp/router_server.pid"
-LOG_FILE="/home/small_ed/cognihub/server.log"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="$APP_DIR/logs"
+LOG_FILE="$LOG_DIR/server.log"
+
+mkdir -p "$LOG_DIR"
+
+venv_python() {
+    if [ -x "$APP_DIR/.venv/bin/python" ]; then
+        echo "$APP_DIR/.venv/bin/python"
+        return
+    fi
+    if [ -x "$APP_DIR/venv/bin/python" ]; then
+        echo "$APP_DIR/venv/bin/python"
+        return
+    fi
+    echo "python3"
+}
 
 start_server() {
     if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
@@ -11,8 +27,10 @@ start_server() {
     fi
 
     echo "Starting CogniHub server..."
-    cd /home/small_ed/cognihub
-    nohup python -m uvicorn src.cognihub.app:app --host 0.0.0.0 --port 8003 > "$LOG_FILE" 2>&1 &
+    local py
+    py="$(venv_python)"
+    cd "$APP_DIR"
+    nohup "$py" -m uvicorn cognihub.app:app --host 0.0.0.0 --port 8003 > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     sleep 2
 

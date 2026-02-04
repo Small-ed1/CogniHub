@@ -2,7 +2,9 @@
 setlocal enabledelayedexpansion
 
 set "PID_FILE=%TEMP%\router_server.pid"
-set "LOG_FILE=%~dp0logs\server.log"
+for %%I in ("%~dp0..") do set "APP_DIR=%%~fI"
+set "LOG_FILE=%APP_DIR%\logs\server.log"
+if not exist "%APP_DIR%\logs" mkdir "%APP_DIR%\logs"
 
 if "%1"=="start" goto start_server
 if "%1"=="stop" goto stop_server
@@ -22,8 +24,8 @@ if exist "%PID_FILE%" (
 )
 
 echo Starting Router Phase 1 server...
-cd /d "%~dp0"
-start /b uvicorn app:app --host 0.0.0.0 --port 8003 > "%LOG_FILE%" 2>&1
+cd /d "%APP_DIR%"
+start /b uvicorn cognihub.app:app --host 0.0.0.0 --port 8003 > "%LOG_FILE%" 2>&1
 for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq uvicorn.exe" /NH') do set SERVER_PID=%%i
 if defined SERVER_PID (
     echo !SERVER_PID! > "%PID_FILE%"

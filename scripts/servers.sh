@@ -1,13 +1,26 @@
 #!/bin/bash
 set -e
 
-APP_DIR="/home/small_ed/cognihub"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FASTAPI_PID_FILE="$APP_DIR/fastapi.pid"
 OLLAMA_PID_FILE="$APP_DIR/ollama.pid"
-FASTAPI_LOG="$APP_DIR/fastapi.log"
-OLLAMA_LOG="$APP_DIR/ollama.log"
+LOG_DIR="$APP_DIR/logs"
+FASTAPI_LOG="$LOG_DIR/fastapi.log"
+OLLAMA_LOG="$LOG_DIR/ollama.log"
 
-cd "$APP_DIR"
+mkdir -p "$LOG_DIR"
+
+venv_python() {
+    if [ -x "$APP_DIR/.venv/bin/python" ]; then
+        echo "$APP_DIR/.venv/bin/python"
+        return
+    fi
+    if [ -x "$APP_DIR/venv/bin/python" ]; then
+        echo "$APP_DIR/venv/bin/python"
+        return
+    fi
+    echo "python3"
+}
 
 kill_pidfile() {
     local pidfile="$1"
@@ -40,9 +53,9 @@ start_ollama() {
 
 start_fastapi() {
     echo "Starting FastAPI..."
-    source venv/bin/activate
-    export PYTHONPATH="$APP_DIR/src"
-    nohup uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 > "$FASTAPI_LOG" 2>&1 &
+    local py
+    py="$(venv_python)"
+    nohup "$py" -m uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 > "$FASTAPI_LOG" 2>&1 &
     FASTAPI_PID=$!
     echo "$FASTAPI_PID" > "$FASTAPI_PID_FILE"
     echo "FastAPI started (PID: $FASTAPI_PID), logging to $FASTAPI_LOG"

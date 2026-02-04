@@ -2,28 +2,30 @@
 
 CogniHub is a local-first chat + tools + RAG workspace built around Ollama.
 
-This repo is currently in transition to a monorepo layout. The actively-developed, integrated setup lives under `monorepo/`.
+This repo uses a workspace layout with multiple Python packages developed together.
 
 ## What's In Here
 
-- `monorepo/packages/cognihub`: FastAPI backend + web UI + tests
-- `monorepo/packages/ollama_cli`: `ollama-cli` library + CLI (shared clients/tools used by CogniHub)
-- `monorepo/`: workspace runner (single venv for both packages)
+- `packages/cognihub`: FastAPI backend + web UI + tests
+- `packages/ollama_cli`: `ollama-cli` library + CLI (shared clients/tools used by CogniHub)
+- `scripts/`: helper scripts (env wizard, doctor, etc.)
 
-## Quick Start (Monorepo)
+## Quick Start
 
 Prereqs:
 - Python 3.14+
 - Ollama running on `http://127.0.0.1:11434`
 
 ```bash
-cd monorepo
 python -m venv .venv
-source .venv/bin/activate
+
+# Activate the venv
+# - Windows (PowerShell): .venv\\Scripts\\Activate.ps1
+# - Windows (cmd.exe):   .venv\\Scripts\\activate.bat
+# - macOS/Linux:         source .venv/bin/activate
 
 python -m pip install -U pip
-python -m pip install -e packages/ollama_cli
-python -m pip install -e packages/cognihub
+python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
 
 python -m pytest
 uvicorn cognihub.app:app --reload --host 127.0.0.1 --port 8000
@@ -33,7 +35,7 @@ Open `http://127.0.0.1:8000`.
 
 ## Web UI
 
-The UI is served from `monorepo/packages/cognihub/web/static/`.
+The UI is served from `packages/cognihub/web/static/`.
 
 Routes:
 - `#/home`
@@ -69,7 +71,6 @@ UI-side overrides (stored in browser localStorage):
 To generate a local `.env` for your machine (without hardcoding paths in the repo):
 
 ```bash
-cd monorepo
 python scripts/setup_env.py
 ```
 
@@ -143,8 +144,6 @@ COGNIHUB_SEARCH_PROVIDER=searxng
 
 ## Doctor / Sanity Checks
 
-From `monorepo/`:
-
 ```bash
 python scripts/doctor.py
 ```
@@ -156,7 +155,6 @@ It checks your env vars, directories, and whether Ollama/Kiwix endpoints are rea
 If you want stable default paths without hardcoding them in the project, you can create symlinks in your home directory:
 
 ```bash
-cd monorepo
 python scripts/setup_links.py
 ```
 
@@ -164,15 +162,8 @@ This can create `~/zims -> /your/zims/path` and `~/Ebooks -> /your/ebooks/path` 
 
 ## Development
 
-From `monorepo/`:
-
 ```bash
 python -m pytest
 python -m mypy packages/cognihub/src/cognihub --ignore-missing-imports
 python -m mypy packages/ollama_cli/src/ollama_cli
 ```
-
-## Notes
-
-- The repository root contains legacy/non-monorepo files while migration is in progress.
-- If you are unsure which setup to use: use `monorepo/`.
