@@ -100,10 +100,10 @@ async def rerank_results(
             continue
         if i in seen:
             continue
-        r = by_id.get(i)
-        if r is None:
+        cand = by_id.get(i)
+        if cand is None:
             continue
-        picked.append(r)
+        picked.append(cand)
         seen.add(i)
 
     if not picked:

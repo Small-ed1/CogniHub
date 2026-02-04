@@ -50,7 +50,7 @@ def test_contract_validation():
     assert answer.type == "final"
     assert answer.answer == "This is the final answer."
 
-    print("✓ Contract validation tests passed")
+    print("OK  Contract validation tests passed")
 
 
 async def test_tool_execution():
@@ -93,7 +93,7 @@ async def test_tool_execution():
         assert result_data["ok"] is True
         assert result_data["data"]["response"] == "Echo: hello world"
 
-        print("✓ Tool execution tests passed")
+        print("OK  Tool execution tests passed")
     finally:
         if os.path.exists(temp_db):
             os.unlink(temp_db)
