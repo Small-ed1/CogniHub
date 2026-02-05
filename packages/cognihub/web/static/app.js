@@ -438,8 +438,15 @@ const ebooksDirEl = el("ebooksDir");
 const epubQueryEl = el("epubQuery");
 const btnReloadEpubs = el("btnReloadEpubs");
 const btnIngestTopEpub = el("btnIngestTopEpub");
+const btnIngestAllEpubs = el("btnIngestAllEpubs");
 const epubsListEl = el("epubsList");
 const epubStatusEl = el("epubStatus");
+
+const btnReloadIngestedEpubs = el("btnReloadIngestedEpubs");
+const ingestedEpubsListEl = el("ingestedEpubsList");
+const ingestedEpubsStatusEl = el("ingestedEpubsStatus");
+
+let _lastEpubItems = [];
 
 const srcZimDirEl = el("srcZimDir");
 const srcEbooksDirEl = el("srcEbooksDir");
@@ -544,6 +551,7 @@ async function loadEpubs(){
   const res = await fetch(`/api/epubs?${qs.toString()}`);
   const j = await res.json().catch(()=> ({}));
   const items = j.items || [];
+  _lastEpubItems = Array.isArray(items) ? items : [];
   _setText(epubStatusEl, `${items.length || 0} result(s)`);
 
   if (!Array.isArray(items) || items.length === 0){
@@ -554,9 +562,10 @@ async function loadEpubs(){
   const frag = document.createDocumentFragment();
   items.forEach((it, idx)=>{
     const path = (it.path || "").toString();
+    const ingested = !!it.ingested;
     const row = document.createElement("div");
     row.className = "listItem";
-    row.innerHTML = `<div><div class="itemTitle">${escapeHtml(path)}</div><div class="itemSub">EPUB</div></div><div class="row"><button class="btn" data-epub-path="${escapeAttr(path)}">Ingest</button></div>`;
+    row.innerHTML = `<div><div class="itemTitle">${escapeHtml(path)}</div><div class="itemSub">${ingested ? "EPUB • Ingested" : "EPUB"}</div></div><div class="row"><button class="btn" data-epub-path="${escapeAttr(path)}" ${ingested ? "disabled" : ""}>${ingested ? "Ingested" : "Ingest"}</button></div>`;
     frag.appendChild(row);
   });
   epubsListEl.appendChild(frag);
@@ -585,12 +594,85 @@ async function ingestEpub(path){
     _setText(epubStatusEl, j.error || j.detail || `Failed (${res.status})`);
     return;
   }
-  _setText(epubStatusEl, `Ingested (doc_id ${j.doc_id})`);
-  toast("Ingested", path);
+  if (j.already_ingested) {
+    _setText(epubStatusEl, `Already ingested (doc_id ${j.doc_id})`);
+    toast("Already ingested", path);
+  } else {
+    _setText(epubStatusEl, `Ingested (doc_id ${j.doc_id})`);
+    toast("Ingested", path);
+  }
+
+  loadIngestedEpubs().catch(()=> {});
+  loadEpubs().catch(()=> {});
+}
+
+async function ingestAllEpubResults(){
+  const s = _ui();
+  const library_dir = (ebooksDirEl?.value || s.srcEbooksDir || "").trim();
+  const items = Array.isArray(_lastEpubItems) ? _lastEpubItems : [];
+  const paths = items
+    .filter(it => it && it.path && !it.ingested)
+    .map(it => String(it.path));
+
+  if (paths.length === 0){
+    toast("EPUB", "Nothing new to ingest.");
+    return;
+  }
+
+  _setText(epubStatusEl, `Ingesting ${paths.length}…`);
+  const res = await fetch("/api/epubs/ingest_many", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths, library_dir }),
+  });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok || j.ok === false){
+    _setText(epubStatusEl, j.error || j.detail || `Failed (${res.status})`);
+    return;
+  }
+  const results = Array.isArray(j.results) ? j.results : [];
+  const okCount = results.filter(r => r && r.ok).length;
+  _setText(epubStatusEl, `Ingested ${okCount}/${paths.length}`);
+  toast("EPUB", `Ingested ${okCount}/${paths.length}`);
+  loadIngestedEpubs().catch(()=> {});
+  loadEpubs().catch(()=> {});
+}
+
+async function loadIngestedEpubs(){
+  if (!ingestedEpubsListEl) return;
+  ingestedEpubsListEl.innerHTML = "";
+  _setText(ingestedEpubsStatusEl, "Loading…");
+
+  const qs = new URLSearchParams();
+  qs.set("source", "epub");
+  const res = await fetch(`/api/library/ingested?${qs.toString()}`);
+  const j = await res.json().catch(()=> ({}));
+  const items = j.items || [];
+
+  if (!Array.isArray(items) || items.length === 0){
+    _setText(ingestedEpubsStatusEl, "0");
+    ingestedEpubsListEl.innerHTML = `<div class="muted">No ingested EPUBs yet.</div>`;
+    return;
+  }
+
+  _setText(ingestedEpubsStatusEl, `${items.length} book(s)`);
+  const frag = document.createDocumentFragment();
+  for (const it of items){
+    const title = (it.title || it.filename || "").toString();
+    const author = (it.author || "").toString();
+    const path = (it.path || "").toString();
+    const row = document.createElement("div");
+    row.className = "listItem";
+    row.innerHTML = `<div><div class="itemTitle">${escapeHtml(title || "(untitled)")}</div><div class="itemSub">${escapeHtml([author, path].filter(Boolean).join(" • ") || "EPUB")}</div></div>`;
+    frag.appendChild(row);
+  }
+  ingestedEpubsListEl.appendChild(frag);
 }
 
 async function loadLibraryPage(){
   syncSourcesFromUiToControls();
+  loadIngestedEpubs().catch(()=> {});
+  loadEpubs().catch(()=> {});
 }
 
 kiwixZimDirEl?.addEventListener("change", ()=>{
@@ -625,8 +707,10 @@ srcKiwixUrlEl?.addEventListener("change", ()=>{
 
 btnReloadZims?.addEventListener("click", ()=> loadZims().catch(e=> toast("ZIMs", String(e))));
 btnReloadEpubs?.addEventListener("click", ()=> loadEpubs().catch(e=> toast("EPUBs", String(e))));
+btnReloadIngestedEpubs?.addEventListener("click", ()=> loadIngestedEpubs().catch(e=> toast("Ingested", String(e))));
+btnIngestAllEpubs?.addEventListener("click", ()=> ingestAllEpubResults().catch(e=> toast("EPUB", String(e))));
 btnIngestTopEpub?.addEventListener("click", async ()=> {
-  const first = epubsListEl?.querySelector("button[data-epub-path]");
+  const first = epubsListEl?.querySelector("button[data-epub-path]:not([disabled])") || epubsListEl?.querySelector("button[data-epub-path]");
   const p = first?.getAttribute("data-epub-path") || "";
   if (!p) {
     toast("EPUB", "No results to ingest.");

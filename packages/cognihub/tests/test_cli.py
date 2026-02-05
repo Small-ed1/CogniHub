@@ -61,6 +61,7 @@ class TestCogniHubCLI:
         core_path = cfg_dir / "core.toml"
         raw = core_path.read_text(encoding="utf-8")
         raw = raw.replace('host = "127.0.0.1"', 'host = "example.com"')
+        raw = raw.replace('host = "0.0.0.0"', 'host = "example.com"')
         raw = raw.replace('port = 8000', 'port = 9000')
         raw = raw.replace('chat_model = "llama3.1:latest"', 'chat_model = "custom-model"')
         core_path.write_text(raw, encoding="utf-8")

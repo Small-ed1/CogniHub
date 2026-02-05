@@ -911,6 +911,7 @@ async function loadPrefs(){
   state.prefs = j.prefs || { rag_enabled:0, doc_ids:null };
   ragToggle.checked = !!state.prefs.rag_enabled;
   updateRagSummary();
+  updateDocsAllNoneButtons();
 }
 
 async function savePrefs(patch){
@@ -943,11 +944,37 @@ function updateRagSummary(){
 
 /* ---------------- docs UI ---------------- */
 
+function _docsSelectionMode() {
+  // Returns: "all" | "none" | "some"
+  const sel = state.prefs?.doc_ids ?? null;
+  if (sel === null) return "all";
+  if (!Array.isArray(sel) || sel.length === 0) return "none";
+
+  // Defensive: if backend ever returns the full list instead of NULL,
+  // treat it as "all" so the UI stays consistent.
+  const allIds = (state.docs || []).map(x => Number(x.id)).filter(Number.isFinite).sort((a, b) => a - b);
+  const nextSorted = sel.map(Number).filter(Number.isFinite).slice().sort((a, b) => a - b);
+  const same = allIds.length && allIds.length === nextSorted.length && allIds.every((v, i) => v === nextSorted[i]);
+  return same ? "all" : "some";
+}
+
+function updateDocsAllNoneButtons() {
+  if (!btnDocsAll || !btnDocsNone) return;
+
+  const mode = _docsSelectionMode();
+  btnDocsAll.classList.toggle("toggleActive", mode === "all");
+  btnDocsNone.classList.toggle("toggleActive", mode === "none");
+
+  btnDocsAll.disabled = mode === "all";
+  btnDocsNone.disabled = mode === "none";
+}
+
 async function loadDocs(){
   const j = await api("/api/docs");
   state.docs = j.docs || [];
   renderDocsList();
   updateRagSummary();
+  updateDocsAllNoneButtons();
 }
 
 function renderDocsList(){
@@ -1049,17 +1076,21 @@ function renderDocsList(){
     item.append(top);
     docsList.appendChild(item);
   }
+
+  updateDocsAllNoneButtons();
 }
 
 btnDocsAll?.addEventListener("click", async () => {
   if (!currentChatId) return;
   await savePrefs({ doc_ids: null });
   renderDocsList();
+  updateDocsAllNoneButtons();
 });
 btnDocsNone?.addEventListener("click", async () => {
   if (!currentChatId) return;
   await savePrefs({ doc_ids: [] });
   renderDocsList();
+  updateDocsAllNoneButtons();
 });
 
 fileUpload?.addEventListener("change", async () => {

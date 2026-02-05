@@ -60,7 +60,7 @@ def ensure_default_config_files(config_dir: Path) -> list[Path]:
 
     if not core_path.exists():
         core_path.write_text(
-            """# CogniHub core configuration (v1.0)\n\n[core]\nhost = \"127.0.0.1\"\nport = 8000\nreload = false\n\n[models]\nollama_url = \"http://127.0.0.1:11434\"\n# Use the exact tag name shown by `ollama list` (often ends with :latest).\nchat_model = \"llama3.1:latest\"\nembed_model = \"nomic-embed-text:latest\"\n\n[paths]\n# data_dir controls where CogniHub stores its sqlite DBs\ndata_dir = \"~/.cognihub/data\"\n\n[limits]\nmax_upload_bytes = 10485760\nmax_research_rounds = 6\nmax_pages_per_round = 12\nmax_web_queries = 6\nmax_doc_queries = 6\nmax_json_parse_size = 100000\n\n""",
+            """# CogniHub core configuration (v1.0)\n\n[core]\nhost = \"0.0.0.0\"\nport = 8000\nreload = false\n\n[models]\nollama_url = \"http://127.0.0.1:11434\"\n# Use the exact tag name shown by `ollama list` (often ends with :latest).\nchat_model = \"llama3.1:latest\"\nembed_model = \"nomic-embed-text:latest\"\n\n[sources]\n# Optional: offline sources + local libraries\n# Leave kiwix_url blank to disable kiwix tools\nkiwix_url = \"\"\nkiwix_zim_dir = \"~/zims\"\nebooks_dir = \"~/Ebooks\"\n\n[paths]\n# data_dir controls where CogniHub stores its sqlite DBs\ndata_dir = \"~/.cognihub/data\"\n\n[limits]\nmax_upload_bytes = 10485760\nmax_research_rounds = 6\nmax_pages_per_round = 12\nmax_web_queries = 6\nmax_doc_queries = 6\nmax_json_parse_size = 100000\n\n""",
             encoding="utf-8",
         )
         created.append(core_path)
@@ -93,6 +93,11 @@ class Config:
     ollama_url: str
     default_chat_model: str
     default_embed_model: str
+
+    # sources (library)
+    kiwix_url: str
+    kiwix_zim_dir: str
+    ebooks_dir: str
 
     # search
     web_user_agent: str
@@ -145,6 +150,7 @@ def load_config(*, config_dir: Path | None = None) -> Config:
     core_core = _as_dict(core.get("core"))
     core_models = _as_dict(core.get("models"))
     core_paths = _as_dict(core.get("paths"))
+    core_sources = _as_dict(core.get("sources"))
     core_limits = _as_dict(core.get("limits"))
 
     tools_sec = _as_dict(tools.get("tools"))
@@ -153,13 +159,24 @@ def load_config(*, config_dir: Path | None = None) -> Config:
 
     search_sec = _as_dict(search.get("search"))
 
-    host = str(core_core.get("host") or "127.0.0.1")
+    host_raw = str(core_core.get("host") or "0.0.0.0").strip()
+    # Always bind the server to all interfaces by default.
+    # Treat common loopback values as aliases so restarts behave consistently.
+    host = "0.0.0.0" if host_raw in {"", "127.0.0.1", "localhost"} else host_raw
     port = int(core_core.get("port") or 8000)
     reload = bool(core_core.get("reload") or False)
 
     ollama_url = str(core_models.get("ollama_url") or "http://127.0.0.1:11434").rstrip("/")
     chat_model = str(core_models.get("chat_model") or "llama3.1")
     embed_model = str(core_models.get("embed_model") or "nomic-embed-text")
+
+    # Sources / library
+    # Prefer config file; fallback to env for backwards compatibility.
+    kiwix_url = str(core_sources.get("kiwix_url") or os.getenv("KIWIX_URL") or "").rstrip("/")
+    kiwix_zim_dir_raw = str(core_sources.get("kiwix_zim_dir") or os.getenv("KIWIX_ZIM_DIR") or "~/zims")
+    ebooks_dir_raw = str(core_sources.get("ebooks_dir") or os.getenv("EBOOKS_DIR") or "~/Ebooks")
+    kiwix_zim_dir = _expand_path(kiwix_zim_dir_raw)
+    ebooks_dir = _expand_path(ebooks_dir_raw)
 
     data_dir_raw = str(core_paths.get("data_dir") or "~/.cognihub/data")
     data_dir = _expand_path(data_dir_raw)
@@ -205,6 +222,9 @@ def load_config(*, config_dir: Path | None = None) -> Config:
         ollama_url=ollama_url,
         default_chat_model=chat_model,
         default_embed_model=embed_model,
+        kiwix_url=kiwix_url,
+        kiwix_zim_dir=kiwix_zim_dir,
+        ebooks_dir=ebooks_dir,
         web_user_agent=web_user_agent,
         web_allowed_hosts=web_allowed_hosts,
         web_blocked_hosts=web_blocked_hosts,
@@ -243,7 +263,7 @@ class _ConfigHandle:
     def __init__(self) -> None:
         self._cfg: Config | None = None
 
-    def reload(self) -> Config:
+    def reload_from_disk(self) -> Config:
         self._cfg = load_config()
         return self._cfg
 

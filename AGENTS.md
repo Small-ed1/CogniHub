@@ -38,7 +38,7 @@ python scripts/setup_links.py
 Run server + UI
 ```bash
 # FastAPI (dev)
-uvicorn cognihub.app:app --reload --host 127.0.0.1 --port 8000
+uvicorn cognihub.app:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal UI
 cognihub-tui

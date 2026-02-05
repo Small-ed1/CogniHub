@@ -66,6 +66,26 @@ _web_ingest = WebIngestQueue(concurrency=3)
 _cache: dict[str, tuple[Any, float]] = {}
 _cache_lock = asyncio.Lock()
 
+_epub_indexes: dict[str, dict[str, Any]] = {}
+_epub_index_lock = asyncio.Lock()
+
+
+def _norm_dir(raw: str | None) -> str:
+    return str(Path((raw or "").strip()).expanduser().resolve())
+
+
+async def _get_epub_index(*, library_dir: str) -> dict[str, Any]:
+    key = _norm_dir(library_dir)
+    async with _epub_index_lock:
+        idx = _epub_indexes.get(key)
+        if idx is not None:
+            return idx
+
+    built = await asyncio.to_thread(epub_ingest.build_epub_index, library_dir=key)
+    async with _epub_index_lock:
+        _epub_indexes[key] = built
+        return built
+
 SLASH_COMMANDS = [
     {"cmd": "/help",    "args": "",           "desc": "Show all commands"},
     {"cmd": "/find",    "args": "<query>",    "desc": "Search within current chat"},
@@ -125,6 +145,14 @@ async def lifespan(app: FastAPI):
     webstore.init_db()
     researchstore.init_db()
 
+    # Snapshot EPUB library indexes once per server run.
+    try:
+        default_lib = _norm_dir(getattr(config.config, "ebooks_dir", ""))
+        if default_lib:
+            _epub_indexes[default_lib] = await asyncio.to_thread(epub_ingest.build_epub_index, library_dir=default_lib)
+    except Exception:
+        pass
+
     _http = httpx.AsyncClient(timeout=None)
     await _web_ingest.start()
 
@@ -136,7 +164,7 @@ async def lifespan(app: FastAPI):
         http=_http,
         ingest_queue=_web_ingest,
         embed_model=config.config.default_embed_model,
-        kiwix_url=os.getenv("KIWIX_URL"),
+        kiwix_url=config.config.kiwix_url,
     )
 
     # Optional tool plugins (extensible without core edits)
@@ -155,7 +183,7 @@ async def lifespan(app: FastAPI):
             http=_http,
             ingest_queue=_web_ingest,
             embed_model=config.config.default_embed_model,
-            kiwix_url=os.getenv("KIWIX_URL"),
+            kiwix_url=config.config.kiwix_url,
         )
         if inspect.isawaitable(result):
             await result
@@ -372,19 +400,42 @@ class EpubIngestReq(BaseModel):
     library_dir: Optional[str] = None
 
 
+class EpubIngestManyReq(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    paths: list[str] = Field(default_factory=list)
+    library_dir: Optional[str] = None
+
+
 @app.get("/api/epubs")
 async def api_epubs_list(
     q: Optional[str] = Query(default=None),
     limit: int = Query(default=25, ge=1, le=200),
     library_dir: Optional[str] = Query(default=None, max_length=1024),
 ):
-    items = await asyncio.to_thread(
-        epub_ingest.list_epubs,
-        query=q,
-        limit=limit,
-        library_dir=library_dir or config.config.ebooks_dir,
-    )
-    return {"library_dir": library_dir or config.config.ebooks_dir, "items": items}
+    lib = (library_dir or "").strip() or config.config.ebooks_dir
+    idx = await _get_epub_index(library_dir=lib)
+
+    q2 = (q or "").strip().lower()
+    paths = idx.get("paths") or []
+    out: list[dict[str, Any]] = []
+    for p in paths:
+        if len(out) >= int(limit):
+            break
+        ps = str(p)
+        if q2 and q2 not in ps.lower():
+            continue
+        out.append({"path": ps})
+
+    # Annotate results with ingest status so the UI can show what's already ingested.
+    doc_ids = ragstore.lookup_doc_ids_by_source_paths("epub", [it["path"] for it in out if it.get("path")])
+    for it in out:
+        pth = str(it.get("path") or "")
+        did = doc_ids.get(pth)
+        it["ingested"] = bool(did)
+        if did:
+            it["doc_id"] = int(did)
+
+    return {"library_dir": idx.get("library_dir") or lib, "items": out, "indexed_at": idx.get("indexed_at")}
 
 
 @app.post("/api/epubs/ingest")
@@ -404,6 +455,51 @@ async def api_epubs_ingest(req: EpubIngestReq):
             library_dir=library_dir,
         )
     raise HTTPException(status_code=400, detail="path or query required")
+
+
+@app.post("/api/epubs/ingest_many")
+async def api_epubs_ingest_many(req: EpubIngestManyReq):
+    library_dir = (req.library_dir or "").strip() or config.config.ebooks_dir
+    paths = [str(p).strip() for p in (req.paths or []) if str(p).strip()]
+    if not paths:
+        raise HTTPException(status_code=400, detail="paths required")
+    if len(paths) > 200:
+        raise HTTPException(status_code=400, detail="too many paths (max 200)")
+
+    results: list[dict[str, Any]] = []
+    for p in paths:
+        results.append(
+            await epub_ingest.ingest_epub(
+                path=p,
+                embed_model=DEFAULT_EMBED_MODEL,
+                library_dir=library_dir,
+            )
+        )
+    return {"ok": True, "count": len(results), "results": results}
+
+
+@app.get("/api/library/ingested")
+async def api_library_ingested(source: str = Query(default="epub", min_length=1, max_length=32)):
+    docs = ragstore.list_documents()
+    src = (source or "").strip().lower()
+    out: list[dict[str, Any]] = []
+    for d in docs:
+        ds = str((d.get("source") or "") if isinstance(d, dict) else "").lower()
+        dg = str((d.get("group_name") or "") if isinstance(d, dict) else "").lower()
+        if src and ds != src and dg != src:
+            continue
+        out.append(
+            {
+                "id": d.get("id"),
+                "created_at": d.get("created_at"),
+                "filename": d.get("filename"),
+                "title": d.get("title"),
+                "author": d.get("author"),
+                "path": d.get("path"),
+                "meta_json": d.get("meta_json"),
+            }
+        )
+    return {"source": src, "items": out}
 
 @app.get("/api/chunks/{chunk_id}")
 async def get_chunk(chunk_id: int):
@@ -671,7 +767,7 @@ async def api_summary(chat_id: str):
             options=opts or None,
             embed_model=DEFAULT_EMBED_MODEL,
             ingest_queue=_web_ingest,
-            kiwix_url=os.getenv("KIWIX_URL"),
+            kiwix_url=config.config.kiwix_url,
         )
     except HTTPException:
         raise
@@ -755,7 +851,7 @@ async def api_autosummary(chat_id: str, force: int = 0):
             options=opts or None,
             embed_model=DEFAULT_EMBED_MODEL,
             ingest_queue=_web_ingest,
-            kiwix_url=os.getenv("KIWIX_URL"),
+            kiwix_url=config.config.kiwix_url,
         )
     except HTTPException:
         raise
@@ -831,7 +927,7 @@ class RagConfig(BaseModel):
     use_kiwix: bool = False
 
     # kiwix (ZIM) behavior
-    kiwix_persist: bool = True
+    kiwix_persist: bool = False
     kiwix_pages: int = Field(default=4, ge=1, le=10)
 
     # optional router (choose sources + rewrite queries)
@@ -913,7 +1009,7 @@ async def api_chat(req: ChatReq, request: Request):
                 rag=req.rag.model_dump() if req.rag else None,
                 embed_model=DEFAULT_EMBED_MODEL,
                 web_ingest=_web_ingest,
-                kiwix_url=os.getenv("KIWIX_URL"),
+                kiwix_url=config.config.kiwix_url,
                 request=request,
                 chat_id=chat_id,
                 message_id=message_id,
@@ -1104,7 +1200,7 @@ async def api_research_run(req: ResearchReq):
 
     settings = req.model_dump(exclude_none=True)
     embed_model = req.embed_model or DEFAULT_EMBED_MODEL
-    kiwix_url = os.getenv("KIWIX_URL")
+    kiwix_url = config.config.kiwix_url
 
     try:
         return await run_research(

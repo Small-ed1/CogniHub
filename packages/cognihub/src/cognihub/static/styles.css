@@ -292,6 +292,12 @@ body::after{
 }
 .btn:disabled{opacity:.55;cursor:not-allowed; box-shadow:none;}
 
+/* Toggle-style buttons (e.g., Docs: All/None) */
+.btn.toggleActive{
+  background: rgba(95,168,255,.18);
+  border-color: rgba(95,168,255,.40);
+}
+
 .iconbtn{
   border:1px solid var(--border);
   background: rgba(255,255,255,.03);

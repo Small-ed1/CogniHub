@@ -67,6 +67,8 @@ def init_db():
             _migrate_4_doc_meta(con); _set_user_version(con, 4); v = 4
         if v < 5:
             _migrate_5_doc_fields(con); _set_user_version(con, 5); v = 5
+        if v < 6:
+            _migrate_6_source_path_index(con); _set_user_version(con, 6); v = 6
 
 def _migrate_1_baseline(con: sqlite3.Connection):
     con.execute("""
@@ -179,6 +181,13 @@ def _migrate_5_doc_fields(con: sqlite3.Connection):
 
     con.execute("CREATE INDEX IF NOT EXISTS idx_docs_source ON docs(source);")
     con.execute("CREATE INDEX IF NOT EXISTS idx_docs_path ON docs(path);")
+
+
+def _migrate_6_source_path_index(con: sqlite3.Connection):
+    # Fast lookups for idempotent ingests by (source, path).
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+    if {"source", "path"}.issubset(cols):
+        con.execute("CREATE INDEX IF NOT EXISTS idx_docs_source_path ON docs(source, path);")
 
 def _client() -> httpx.AsyncClient:
     global _http
@@ -417,6 +426,22 @@ async def add_document_sections(
     chunk_max_chars: int = 4000,
     chunk_overlap_chars: int = 700,
 ) -> int:
+    # If a stable source+path is provided, treat it as the primary dedupe key.
+    # This makes ingests idempotent across restarts even when content hashes match
+    # between different files or when content changes slightly.
+    src = (source or "").strip().lower() or None
+    pth = (path or "").strip() or None
+    if src and pth:
+        with _db() as con:
+            cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+            if {"source", "path"}.issubset(cols):
+                row = con.execute(
+                    "SELECT id FROM docs WHERE source=? AND path=? ORDER BY created_at DESC LIMIT 1",
+                    (src, pth),
+                ).fetchone()
+                if row:
+                    return int(row["id"])
+
     parts: list[str] = []
     for _, txt in sections or []:
         if txt:
@@ -473,10 +498,10 @@ async def add_document_sections(
                     embed_model,
                     embed_dim,
                     (group_name or None),
-                    (source or None),
+                    (src or None),
                     (title or None),
                     (author or None),
-                    (path or None),
+                    (pth or None),
                     (meta_json or None),
                 ),
             )
@@ -521,6 +546,57 @@ def list_documents():
            ORDER BY d.created_at DESC
         """.format(extra=extra)).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_document_by_source_path(source: str, path: str) -> dict[str, Any] | None:
+    src = (source or "").strip().lower()
+    pth = (path or "").strip()
+    if not src or not pth:
+        return None
+    with _db() as con:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+        if not {"source", "path"}.issubset(cols):
+            return None
+        row = con.execute(
+            """
+            SELECT id, filename, created_at, embed_model, embed_dim, weight, group_name,
+                   source, title, author, path, meta_json
+              FROM docs
+             WHERE source=? AND path=?
+             ORDER BY created_at DESC
+             LIMIT 1
+            """,
+            (src, pth),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def lookup_doc_ids_by_source_paths(source: str, paths: list[str]) -> dict[str, int]:
+    src = (source or "").strip().lower()
+    cleaned = [str(p).strip() for p in (paths or []) if str(p).strip()]
+    if not src or not cleaned:
+        return {}
+
+    out: dict[str, int] = {}
+    with _db() as con:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+        if not {"source", "path"}.issubset(cols):
+            return {}
+
+        # Keep queries comfortably under SQLite parameter limits.
+        CHUNK = 400
+        for i in range(0, len(cleaned), CHUNK):
+            chunk = cleaned[i : i + CHUNK]
+            qmarks = ",".join(["?"] * len(chunk))
+            rows = con.execute(
+                f"SELECT path, id FROM docs WHERE source=? AND path IN ({qmarks})",
+                [src, *chunk],
+            ).fetchall()
+            for r in rows:
+                pth = str(r["path"] or "").strip()
+                if pth:
+                    out[pth] = int(r["id"])
+    return out
 
 def update_document(doc_id: int, *, weight: Optional[float] = None, group_name: Optional[str] = None, filename: Optional[str] = None):
     sets = []

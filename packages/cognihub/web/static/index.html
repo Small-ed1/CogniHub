@@ -161,9 +161,20 @@
             </div>
             <div class="row">
               <button id="btnIngestTopEpub" class="btn primary" type="button">Ingest top match</button>
+              <button id="btnIngestAllEpubs" class="btn" type="button">Ingest all results</button>
               <span id="epubStatus" class="muted"></span>
             </div>
             <div id="epubsList" class="list"></div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">Ingested books</div>
+            <div class="cardBody">Books already ingested into your local RAG store.</div>
+            <div class="row">
+              <button id="btnReloadIngestedEpubs" class="btn" type="button">Reload</button>
+              <span id="ingestedEpubsStatus" class="muted"></span>
+            </div>
+            <div id="ingestedEpubsList" class="list"></div>
           </div>
         </div>
       </section>

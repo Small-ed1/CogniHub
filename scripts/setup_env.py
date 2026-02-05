@@ -107,7 +107,7 @@ def main() -> int:
     print(f"Wrote: {out}")
     print("")
     print("Run with:")
-    print("  uvicorn cognihub.app:app --reload --env-file .env --host 127.0.0.1 --port 8000")
+    print("  uvicorn cognihub.app:app --reload --env-file .env --host 0.0.0.0 --port 8000")
     return 0
 
 

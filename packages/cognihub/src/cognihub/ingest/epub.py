@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import time
 from typing import Any, Optional
 
 from bs4 import BeautifulSoup
@@ -41,7 +42,7 @@ def _extract_text_from_html(html: str) -> str:
     return "\n".join(lines)
 
 
-def _read_epub(epub_path: Path) -> tuple[EpubInfo, list[EpubSection]]:
+def _read_epub(epub_path: Path, *, root: Path | None = None) -> tuple[EpubInfo, list[EpubSection]]:
     book = epub.read_epub(str(epub_path))
 
     title = ""
@@ -90,8 +91,9 @@ def _read_epub(epub_path: Path) -> tuple[EpubInfo, list[EpubSection]]:
             continue
 
     rel = str(epub_path)
+    rel_root = root or _default_library_dir()
     try:
-        rel = str(epub_path.relative_to(_default_library_dir()))
+        rel = str(epub_path.relative_to(rel_root))
     except Exception:
         pass
 
@@ -112,7 +114,12 @@ def list_epubs(*, query: Optional[str] = None, limit: int = 25, library_dir: Opt
     if not root.exists() or not root.is_dir():
         return out
 
+    paths: list[Path] = []
     for p in root.rglob("*.epub"):
+        paths.append(p)
+    paths.sort(key=lambda x: str(x).lower())
+
+    for p in paths:
         if len(out) >= limit:
             break
         try:
@@ -127,22 +134,69 @@ def list_epubs(*, query: Optional[str] = None, limit: int = 25, library_dir: Opt
     return out
 
 
+def build_epub_index(*, library_dir: str) -> dict[str, Any]:
+    """Build a static index of EPUB paths under a library directory."""
+
+    root = Path(library_dir or "").expanduser().resolve()
+    indexed_at = int(time.time())
+    out: list[str] = []
+
+    if not root.exists() or not root.is_dir():
+        return {"library_dir": str(root), "indexed_at": indexed_at, "paths": out}
+
+    for p in root.rglob("*.epub"):
+        try:
+            rel = str(p.relative_to(root))
+        except Exception:
+            rel = str(p)
+        out.append(rel)
+    out.sort(key=lambda s: s.lower())
+    return {"library_dir": str(root), "indexed_at": indexed_at, "paths": out}
+
+
 async def ingest_epub(
     *,
     path: str,
     embed_model: str | None = None,
     library_dir: Optional[str] = None,
 ) -> dict[str, Any]:
-    root = Path(library_dir) if library_dir else _default_library_dir()
-    p = Path(path)
-    if not p.is_absolute():
-        p = root / p
-    p = p.expanduser().resolve()
+    root = (Path(library_dir) if library_dir else _default_library_dir()).expanduser().resolve()
+    p = Path(path or "")
+    if p.is_absolute():
+        try:
+            _ = p.expanduser().resolve().relative_to(root)
+        except Exception:
+            return {"ok": False, "error": f"epub path must be under library_dir: {root}"}
+        p = p.expanduser().resolve()
+    else:
+        p = (root / p).expanduser().resolve()
+        try:
+            _ = p.relative_to(root)
+        except Exception:
+            return {"ok": False, "error": f"epub path must be under library_dir: {root}"}
 
     if not p.exists() or not p.is_file():
         return {"ok": False, "error": f"epub not found: {p}"}
 
-    info, sections = _read_epub(p)
+    # Compute the stable library-relative path used as the ingest identity.
+    try:
+        rel_path = str(p.relative_to(root))
+    except Exception:
+        rel_path = str(p)
+
+    # Fast path: if this exact (source, path) is already ingested, don't re-embed.
+    existing = ragstore.get_document_by_source_path("epub", rel_path)
+    if existing:
+        return {
+            "ok": True,
+            "already_ingested": True,
+            "doc_id": int(existing.get("id") or 0),
+            "title": existing.get("title") or p.stem,
+            "authors": [a.strip() for a in str(existing.get("author") or "").split(",") if a.strip()],
+            "path": rel_path,
+        }
+
+    info, sections = _read_epub(p, root=root)
     if not sections:
         return {"ok": False, "error": "no extractable text"}
 
