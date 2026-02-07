@@ -55,7 +55,7 @@ start_fastapi() {
     echo "Starting FastAPI..."
     local py
     py="$(venv_python)"
-    nohup "$py" -m uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 > "$FASTAPI_LOG" 2>&1 &
+    nohup "$py" -m uvicorn contextharbor.app:app --host 0.0.0.0 --port 8000 > "$FASTAPI_LOG" 2>&1 &
     FASTAPI_PID=$!
     echo "$FASTAPI_PID" > "$FASTAPI_PID_FILE"
     echo "FastAPI started (PID: $FASTAPI_PID), logging to $FASTAPI_LOG"

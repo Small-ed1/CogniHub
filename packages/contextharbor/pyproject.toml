@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contextharbor"
+version = "0.1.0"
+description = "AI chat and research application with web scraping and RAG"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "ollama-cli",
+  "requests",
+  "EbookLib",
+  "fastapi",
+  "uvicorn[standard]",
+  "httpx",
+  "python-multipart",
+  "beautifulsoup4",
+  "lxml",
+  "readability-lxml",
+  "textual",
+  "rich",
+  "psutil",
+  "numpy",
+  "pydantic",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "mypy",
+  "types-requests",
+  "build",
+]
+
+[project.scripts]
+contextharbor-app = "contextharbor.app:main"
+contextharbor-tui = "contextharbor.tui.contextharbor_tui:main"
+contextharbor = "contextharbor.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["contextharbor*"]
+
+[tool.setuptools.package-data]
+contextharbor = ["static/*", "static/**/*"]

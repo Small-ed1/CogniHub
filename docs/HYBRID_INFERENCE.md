@@ -1,8 +1,8 @@
-# CogniHub Hybrid CPU/GPU Inference
+# ContextHarbor Hybrid CPU/GPU Inference
 
 ## Overview
 
-CogniHub now supports **dual inference backends** for optimal resource utilization:
+ContextHarbor now supports **dual inference backends** for optimal resource utilization:
 
 - **GPU Backend** (port 11434): Fast inference for smaller models
 - **CPU Backend** (port 11435): Large model support + fallback
@@ -23,7 +23,7 @@ CogniHub now supports **dual inference backends** for optimal resource utilizati
           └────────────┬─────────────┘
                      │
           ┌────────────▼─────────────┐
-          │    CogniHub API       │
+          │  ContextHarbor API    │
           └──────────────────────────┘
 ```
 
@@ -92,7 +92,7 @@ export OLLAMA_CPU_URL=http://127.0.0.1:11435
 ### API Usage
 
 ```python
-from cognihub.services.hybrid_router import smart_chat
+from contextharbor.services.hybrid_router import smart_chat
 
 # Automatic backend selection
 response = await smart_chat(
@@ -142,7 +142,7 @@ response = await smart_chat(
 ### Check Backend Health
 ```bash
 # Check all backends
-python src/cognihub/services/hybrid_router.py --check
+python packages/contextharbor/src/contextharbor/services/hybrid_router.py --check
 
 # Expected output
 {
@@ -166,7 +166,7 @@ python src/cognihub/services/hybrid_router.py --check
 ### List Available Models
 ```bash
 # Models per backend
-python src/cognihub/services/hybrid_router.py --models
+python packages/contextharbor/src/contextharbor/services/hybrid_router.py --models
 
 # Output
 {
@@ -231,9 +231,9 @@ export OLLAMA_GPU_OVERHEAD=0
 export OLLAMA_CONTEXT_LENGTH=4096
 ```
 
-## Integration with CogniHub
+## Integration with ContextHarbor
 
-The hybrid router integrates seamlessly with existing CogniHub features:
+The hybrid router integrates seamlessly with existing ContextHarbor features:
 
 - ✅ **Tool calling**: Native Ollama tools with smart routing
 - ✅ **RAG**: Document retrieval with optimal backend
@@ -243,7 +243,7 @@ The hybrid router integrates seamlessly with existing CogniHub features:
 ### Web Interface Integration
 ```python
 # In app.py - replace direct ollama calls
-from cognihub.services.hybrid_router import smart_chat
+from contextharbor.services.hybrid_router import smart_chat
 
 # Chat endpoint automatically uses hybrid routing
 response = await smart_chat(model, messages, tools=tools)

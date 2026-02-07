@@ -46,7 +46,7 @@ The script manages PIDs automatically:
    python3 -m venv .venv
    source .venv/bin/activate
    python -m pip install -U pip
-   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
    ```
 
 2. Pull an embedding model for RAG:

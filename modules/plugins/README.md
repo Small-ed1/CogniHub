@@ -1,6 +1,6 @@
 # Plugins
 
-CogniHub tool plugins that can be enabled without editing core files.
+ContextHarbor tool plugins that can be enabled without editing core files.
 
 Expected shape:
 
@@ -19,12 +19,12 @@ Install it (editable):
 pip install -e modules/plugins/example_plugin
 ```
 
-Enable it in your CogniHub config (`tools.toml`):
+Enable it in your ContextHarbor config (`tools.toml`):
 
 ```toml
 [tools]
 enabled = ["web_search", "doc_search", "local_file_read", "example_time"]
-plugin_modules = ["cognihub_example_plugin"]
+plugin_modules = ["contextharbor_example_plugin"]
 ```
 
-Then restart CogniHub.
+Then restart ContextHarbor.

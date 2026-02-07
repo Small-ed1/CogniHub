@@ -26,7 +26,7 @@ def _expand(p: str) -> str:
 
 
 def main() -> int:
-    print("CogniHub setup wizard")
+    print("ContextHarbor setup wizard")
     print("- Writes .env (gitignored)")
     print("- You can edit it later")
     print("")
@@ -96,7 +96,7 @@ def main() -> int:
 
     if use_web_search:
         lines.append(f"SEARXNG_URL={searxng_url}")
-        lines.append(f"COGNIHUB_SEARCH_PROVIDER={search_provider}")
+        lines.append(f"CONTEXTHARBOR_SEARCH_PROVIDER={search_provider}")
 
     if allow_shell:
         lines.append("ALLOW_SHELL_EXEC=1")
@@ -107,7 +107,7 @@ def main() -> int:
     print(f"Wrote: {out}")
     print("")
     print("Run with:")
-    print("  uvicorn cognihub.app:app --reload --env-file .env --host 0.0.0.0 --port 8000")
+    print("  uvicorn contextharbor.app:app --reload --env-file .env --host 0.0.0.0 --port 8000")
     return 0
 
 

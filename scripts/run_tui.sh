@@ -6,7 +6,7 @@ APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 if ! curl -sf http://127.0.0.1:8000/health 2>/dev/null; then
     echo "Warning: API server may not be running."
     echo "Start with: scripts/servers.sh start"
-    echo "Or run manually: uvicorn cognihub.app:app --reload --host 0.0.0.0 --port 8000"
+    echo "Or run manually: uvicorn contextharbor.app:app --reload --host 0.0.0.0 --port 8000"
     echo ""
 fi
 
@@ -15,10 +15,10 @@ cd "$APP_DIR"
 
 if [ -d ".venv" ]; then
     source .venv/bin/activate
-    cognihub-tui
+    contextharbor-tui
 else
     echo "Virtual environment not found. Create it with:"
     echo "  python3 -m venv .venv"
     echo "  source .venv/bin/activate"
-    echo "  python -m pip install -e \"packages/ollama_cli[dev]\" -e \"packages/cognihub[dev]\""
+    echo "  python -m pip install -e \"packages/ollama_cli[dev]\" -e \"packages/contextharbor[dev]\""
 fi

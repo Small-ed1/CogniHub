@@ -50,7 +50,7 @@ function Start-Ollama {
 function Start-FastApi {
     Write-Host "Starting FastAPI..."
     $envArg = if (Test-Path $EnvFile) { "--env-file .env" } else { "" }
-    $cmd = "\"$PythonExe\" -m uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 $envArg >> $FastApiLog 2>&1"
+    $cmd = "\"$PythonExe\" -m uvicorn contextharbor.app:app --host 0.0.0.0 --port 8000 $envArg >> $FastApiLog 2>&1"
     $process = Start-Process -WorkingDirectory $AppDir -FilePath "cmd" -ArgumentList "/c", $cmd -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 2
     $fastapiPid = Get-Process -Name "python" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id

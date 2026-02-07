@@ -1,5 +1,5 @@
 #!/bin/bash
-# CogniHub Server Management Script
+# ContextHarbor Server Management Script
 
 PID_FILE="/tmp/router_server.pid"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,11 +26,11 @@ start_server() {
         return 1
     fi
 
-    echo "Starting CogniHub server..."
+    echo "Starting ContextHarbor server..."
     local py
     py="$(venv_python)"
     cd "$APP_DIR"
-    nohup "$py" -m uvicorn cognihub.app:app --host 0.0.0.0 --port 8003 > "$LOG_FILE" 2>&1 &
+    nohup "$py" -m uvicorn contextharbor.app:app --host 0.0.0.0 --port 8003 > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     sleep 2
 

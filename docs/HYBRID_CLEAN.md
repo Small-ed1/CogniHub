@@ -1,4 +1,4 @@
-# CogniHub Hybrid CPU/GPU Inference - Production Ready
+# ContextHarbor Hybrid CPU/GPU Inference - Production Ready
 
 ## Overview
 
@@ -20,7 +20,7 @@ Clean, professional implementation of dual Ollama backends with intelligent inte
           └────────────┬─────────────┘
                      │
           ┌────────────▼─────────────┐
-          │    CogniHub API       │
+          │  ContextHarbor API    │
           └──────────────────────────┘
 ```
 
@@ -72,7 +72,7 @@ export GGML_VK_VISIBLE_DEVICES=0
 
 ```bash
 # Check backend health
-python src/cognihub/services/hybrid_router_clean.py --check
+python packages/contextharbor/src/contextharbor/services/hybrid_router_clean.py --check
 
 # Expected output
 {
@@ -94,7 +94,7 @@ python src/cognihub/services/hybrid_router_clean.py --check
 ### Basic Usage
 
 ```python
-from cognihub.services.hybrid_router_clean import smart_chat
+from contextharbor.services.hybrid_router_clean import smart_chat
 
 # Fast intent (GPU-first) - default
 response = await smart_chat(
@@ -113,7 +113,7 @@ response = await smart_chat(
 ### Advanced Usage
 
 ```python
-from cognihub.services.hybrid_router_clean import get_router
+from contextharbor.services.hybrid_router_clean import get_router
 
 # Get router instance for advanced operations
 router = await get_router()
@@ -252,10 +252,10 @@ OLLAMA_NUM_PARALLEL=2
 ### Health Endpoints
 ```bash
 # Real-time health status
-python src/cognihub/services/hybrid_router_clean.py --check
+python packages/contextharbor/src/contextharbor/services/hybrid_router_clean.py --check
 
 # Model inventory per backend
-python src/cognihub/services/hybrid_router_clean.py --models
+python packages/contextharbor/src/contextharbor/services/hybrid_router_clean.py --models
 ```
 
 ### Metrics Collection
@@ -286,7 +286,7 @@ python src/cognihub/services/hybrid_router_clean.py --models
 
 ## Integration
 
-### With Existing CogniHub Features
+### With Existing ContextHarbor Features
 The hybrid router integrates seamlessly with:
 - Tool calling (native Ollama format)
 - RAG document retrieval
@@ -297,7 +297,7 @@ The hybrid router integrates seamlessly with:
 ### API Integration
 ```python
 # In FastAPI endpoint
-from cognihub.services.hybrid_router_clean import smart_chat
+from contextharbor.services.hybrid_router_clean import smart_chat
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -323,7 +323,7 @@ async def chat_endpoint(request: ChatRequest):
 # Test routing directly
 python -c "
 import asyncio
-from cognihub.services.hybrid_router_clean import get_router
+from contextharbor.services.hybrid_router_clean import get_router
 
 async def test():
     router = get_router()

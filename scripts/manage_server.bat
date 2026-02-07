@@ -25,7 +25,7 @@ if exist "%PID_FILE%" (
 
 echo Starting Router Phase 1 server...
 cd /d "%APP_DIR%"
-start /b uvicorn cognihub.app:app --host 0.0.0.0 --port 8003 > "%LOG_FILE%" 2>&1
+start /b uvicorn contextharbor.app:app --host 0.0.0.0 --port 8003 > "%LOG_FILE%" 2>&1
 for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq uvicorn.exe" /NH') do set SERVER_PID=%%i
 if defined SERVER_PID (
     echo !SERVER_PID! > "%PID_FILE%"

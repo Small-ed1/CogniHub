@@ -1,6 +1,6 @@
-# CogniHub - Windows Setup
+# ContextHarbor - Windows Setup
 
-This guide explains how to run CogniHub on Windows.
+This guide explains how to run ContextHarbor on Windows.
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ This guide explains how to run CogniHub on Windows.
    python -m venv .venv
    .venv\Scripts\activate
    python -m pip install -U pip
-   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
    ```
 3. Install Ollama and pull required models:
    ```
@@ -69,14 +69,14 @@ This guide explains how to run CogniHub on Windows.
 
 2. Start FastAPI (in another terminal):
    ```
-   uvicorn cognihub.app:app --host 0.0.0.0 --port 8000
+   uvicorn contextharbor.app:app --host 0.0.0.0 --port 8000
    ```
 
 3. Open web UI at http://localhost:8000
 
 4. Or run TUI:
      ```
-     cognihub-tui
+     contextharbor-tui
      ```
 
 ## PowerShell Script Commands
@@ -100,7 +100,7 @@ This guide explains how to run CogniHub on Windows.
 ## Directory Structure
 
 - `packages/` - Python packages
-- `packages/cognihub/web/static/` - Static web files
+- `packages/contextharbor/web/static/` - Static web files
 - `data/` - SQLite databases (created automatically)
 - `docs/` - Documentation
 - `scripts/` - Batch scripts

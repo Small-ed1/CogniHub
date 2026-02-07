@@ -1,6 +1,6 @@
-# CogniHub - Terminal User Interface (TUI)
+# ContextHarbor - Terminal User Interface (TUI)
 
-A full-featured terminal interface for CogniHub with the same functionality as the web GUI.
+A full-featured terminal interface for ContextHarbor with the same functionality as the web UI.
 
 ## Features
 
@@ -55,9 +55,9 @@ python -m venv .venv
 # - macOS/Linux:         source .venv/bin/activate
 
 python -m pip install -U pip
-python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
 
-cognihub-tui
+contextharbor-tui
 ```
 
 ### Requirements
@@ -65,12 +65,12 @@ cognihub-tui
 The TUI connects to your running API server. Make sure the backend is running:
 
 ```bash
-sudo systemctl start cognihub
+sudo systemctl start contextharbor
 ```
 
 Or start manually:
 ```bash
-uvicorn cognihub.app:app --reload --host 0.0.0.0 --port 8000
+uvicorn contextharbor.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Configuration

@@ -44,7 +44,7 @@ def _safe_symlink(link_path: Path, target_path: Path) -> None:
 
 
 def main() -> int:
-    print("CogniHub symlink helper")
+    print("ContextHarbor symlink helper")
     print("This creates optional convenience links in your home directory.")
     print("It will NOT overwrite existing files.")
     print("")

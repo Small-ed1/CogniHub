@@ -3,14 +3,14 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cognihub-example-plugin"
+name = "contextharbor-example-plugin"
 version = "0.1.0"
-description = "Example CogniHub tool plugin"
+description = "Example ContextHarbor tool plugin"
 requires-python = ">=3.11"
 dependencies = [
-  "cognihub",
+  "contextharbor",
   "pydantic>=2.6.0",
 ]
 
 [tool.setuptools]
-packages = ["cognihub_example_plugin"]
+packages = ["contextharbor_example_plugin"]

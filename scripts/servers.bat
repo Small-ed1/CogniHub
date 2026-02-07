@@ -124,7 +124,7 @@ goto :eof
 
 :start_fastapi
 echo Starting FastAPI...
-start /b cmd /c "uvicorn cognihub.app:app --host 0.0.0.0 --port 8000 > ""%FASTAPI_LOG%"" 2>&1"
+start /b cmd /c "uvicorn contextharbor.app:app --host 0.0.0.0 --port 8000 > ""%FASTAPI_LOG%"" 2>&1"
 timeout /t 2 >nul
 for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq uvicorn.exe" /NH') do set FASTAPI_PID=%%i
 if defined FASTAPI_PID (

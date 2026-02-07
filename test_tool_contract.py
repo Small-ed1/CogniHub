@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Test the tool contract implementation."""
 
-from cognihub.tools.contract import ToolRequest, FinalAnswer, ToolCall
-from cognihub.tools.registry import ToolRegistry, ToolSpec
-from cognihub.tools.executor import ToolExecutor
-from cognihub.toolstore import ToolStore
+from contextharbor.tools.contract import ToolRequest, FinalAnswer, ToolCall
+from contextharbor.tools.registry import ToolRegistry, ToolSpec
+from contextharbor.tools.executor import ToolExecutor
+from contextharbor.toolstore import ToolStore
 from pydantic import BaseModel
 import asyncio
 

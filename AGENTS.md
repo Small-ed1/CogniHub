@@ -20,7 +20,7 @@ python -m venv .venv
 # - macOS/Linux:         source .venv/bin/activate
 
 python -m pip install -U pip
-python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
 ```
 
 Useful helper scripts
@@ -38,13 +38,15 @@ python scripts/setup_links.py
 Run server + UI
 ```bash
 # FastAPI (dev)
-uvicorn cognihub.app:app --reload --host 0.0.0.0 --port 8000
+uvicorn contextharbor.app:app --reload --host 0.0.0.0 --port 8000
+
 
 # Terminal UI
-cognihub-tui
+contextharbor-tui
+
 
 # CLI
-cognihub --help
+contextharbor --help
 ```
 
 Tests
@@ -53,10 +55,10 @@ Tests
 python -m pytest -q
 
 # one file
-python -m pytest packages/cognihub/tests/test_context_builder.py -q
+python -m pytest packages/contextharbor/tests/test_context_builder.py -q
 
 # single test
-python -m pytest packages/cognihub/tests/test_context_builder.py::test_build_context_caps_and_dedupe -q
+python -m pytest packages/contextharbor/tests/test_context_builder.py::test_build_context_caps_and_dedupe -q
 
 # filter by substring
 python -m pytest -k "context_builder or tool_runtime" -q
@@ -65,7 +67,7 @@ python -m pytest -k "context_builder or tool_runtime" -q
 Type checking / sanity checks
 ```bash
 # mypy (kept permissive; tighten only when scoped)
-python -m mypy packages/cognihub/src/cognihub --ignore-missing-imports
+python -m mypy packages/contextharbor/src/contextharbor --ignore-missing-imports
 python -m mypy packages/ollama_cli/src/ollama_cli --ignore-missing-imports
 ```
 
@@ -77,7 +79,7 @@ Python version
 Imports
 - Use `from __future__ import annotations` at the top of modules with type hints.
 - Group imports: stdlib, third-party, local; separate groups with a blank line.
-- Prefer package-absolute imports within `cognihub` (e.g., `from cognihub.services.chat import stream_chat`).
+- Prefer package-absolute imports within `contextharbor` (e.g., `from contextharbor.services.chat import stream_chat`).
 
 Formatting
 - 4-space indent, no tabs; keep functions small and readable.
@@ -118,15 +120,15 @@ Security + safety
 - Keep tool outputs bounded (truncate + hash for logs).
 
 Configuration
-- Runtime config lives in `packages/cognihub/src/cognihub/config.py`.
+- Runtime config lives in `packages/contextharbor/src/contextharbor/config.py`.
 - Common env vars: `OLLAMA_URL`, `DEFAULT_CHAT_MODEL`, `EMBED_MODEL`, `KIWIX_URL`, `KIWIX_ZIM_DIR`, `EBOOKS_DIR`.
 
 Tool calling system (if touching tools)
-- Contract types are in `packages/cognihub/src/cognihub/tools/contract.py` (`tool_request` / `final`).
+- Contract types are in `packages/contextharbor/src/contextharbor/tools/contract.py` (`tool_request` / `final`).
 - Tools must declare args schemas; executor enforces per-call timeout and output caps.
 - Side-effecting tools must be gated via confirmation tokens.
 
 Where to look
-- API entrypoint: `packages/cognihub/src/cognihub/app.py`.
-- Tool runtime: `packages/cognihub/src/cognihub/tools/registry.py`, `packages/cognihub/src/cognihub/tools/executor.py`.
-- Stores (SQLite): `packages/cognihub/src/cognihub/stores/`.
+- API entrypoint: `packages/contextharbor/src/contextharbor/app.py`.
+- Tool runtime: `packages/contextharbor/src/contextharbor/tools/registry.py`, `packages/contextharbor/src/contextharbor/tools/executor.py`.
+- Stores (SQLite): `packages/contextharbor/src/contextharbor/stores/`.

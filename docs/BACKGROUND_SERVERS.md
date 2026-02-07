@@ -39,10 +39,10 @@ Install as systemd service for automatic startup:
  sudo ./scripts/install-service.sh
 
 # Then manage with systemctl:
-sudo systemctl start cognihub
-sudo systemctl stop cognihub
-sudo systemctl status cognihub
-sudo journalctl -u cognihub -f
+sudo systemctl start contextharbor
+sudo systemctl stop contextharbor
+sudo systemctl status contextharbor
+sudo journalctl -u contextharbor -f
 ```
 
 **Features:**
@@ -76,7 +76,7 @@ tail -f logs/ollama.log
    python3 -m venv .venv
    source .venv/bin/activate
    python -m pip install -U pip
-   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
    ```
 
 2. Pull embedding model for RAG:

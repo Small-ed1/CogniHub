@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/cognihub", "packages/ollama_cli"]
+members = ["packages/contextharbor", "packages/ollama_cli"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/cognihub/tests", "packages/ollama_cli/tests"]
+testpaths = ["packages/contextharbor/tests", "packages/ollama_cli/tests"]

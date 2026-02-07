@@ -1,6 +1,6 @@
 # Intent-Based Hybrid Routing
 
-CogniHub's hybrid router now supports **intent-based routing** for optimal resource utilization.
+ContextHarbor's hybrid router now supports **intent-based routing** for optimal resource utilization.
 
 ## Intent Types
 
@@ -17,7 +17,7 @@ CogniHub's hybrid router now supports **intent-based routing** for optimal resou
 ## Usage Examples
 
 ```python
-from cognihub.services.hybrid_router import smart_chat
+from contextharbor.services.hybrid_router import smart_chat
 
 # Fast interactive chat (GPU-first)
 response = await smart_chat(
@@ -95,10 +95,10 @@ export OLLAMA_CPU_URL=http://127.0.0.1:11435    # CPU backend
 ### Backend Management
 ```bash
 # Check health
-python src/cognihub/services/hybrid_router.py --check
+python packages/contextharbor/src/contextharbor/services/hybrid_router.py --check
 
 # List models per backend  
-python src/cognihub/services/hybrid_router.py --models
+python packages/contextharbor/src/contextharbor/services/hybrid_router.py --models
 ```
 
 ## Best Practices

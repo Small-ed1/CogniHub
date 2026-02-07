@@ -1,4 +1,4 @@
-# CogniHub Tool-Calling Issues Investigation Report
+# ContextHarbor Tool-Calling Issues Investigation Report
 
 ## Executive Summary
 
@@ -8,7 +8,7 @@
 
 ### 1. **System Architecture Overview**
 
-The CogniHub tool-calling system is well-architected with:
+The ContextHarbor tool-calling system is well-architected with:
 - ✅ **Strict JSON schema validation** (Pydantic models)
 - ✅ **Comprehensive error handling** and timeout protection  
 - ✅ **Detailed logging** with SHA256 hashing
@@ -76,7 +76,7 @@ User asks: "What's the weather like?"
 
 **Option A: Better User-Agent & Headers**
 ```python
-# In src/cognihub/services/web_search.py
+# In packages/contextharbor/src/contextharbor/services/web_search.py
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -188,7 +188,7 @@ if len(r.text) < 1000:  # Suspiciously small response
 # Test web search directly
  python -c "
  import asyncio
- from cognihub.services.web_search import ddg_search
+ from contextharbor.services.web_search import ddg_search
  import httpx
 
 async def test():
@@ -245,7 +245,7 @@ GROUP BY tool_name;
 
 ## Conclusion
 
-The CogniHub tool-calling system is **well-designed and robust**, but the **web search component is completely broken** due to DuckDuckGo's anti-bot protection. This is the **primary cause** of user reports about the LLM not having enough information.
+The ContextHarbor tool-calling system is **well-designed and robust**, but the **web search component is completely broken** due to DuckDuckGo's anti-bot protection. This is the **primary cause** of user reports about the LLM not having enough information.
 
 **Fixing web search should be the #1 priority** as it will immediately restore:
 - Current event awareness

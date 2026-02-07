@@ -1,4 +1,4 @@
-# CogniHub Hybrid CPU/GPU Inference - Production Ready
+# ContextHarbor Hybrid CPU/GPU Inference - Production Ready
 
 ## Overview
 
@@ -6,7 +6,7 @@ Clean, professional implementation of dual Ollama backends with intelligent inte
 
 ## Key Components
 
-### 1. Hybrid Router (`src/cognihub/services/hybrid_router.py`)
+### 1. Hybrid Router (`packages/contextharbor/src/contextharbor/services/hybrid_router.py`)
 - **Intent-based routing**: `fast` (GPU-first) or `heavy` (CPU-first)
 - **Smart health monitoring**: Real-time backend status checks
 - **Auto-affinity learning**: Remembers successful backend per model (fast intent only)
@@ -63,7 +63,7 @@ Clean, professional implementation of dual Ollama backends with intelligent inte
 ### Basic Usage
 
 ```python
-from cognihub.services.hybrid_router import smart_chat
+from contextharbor.services.hybrid_router import smart_chat
 
 # Fast intent (GPU-first) - default
 response = await smart_chat(
@@ -82,7 +82,7 @@ response = await smart_chat(
 ### Advanced Usage
 
 ```python
-from cognihub.services.hybrid_router import get_router
+from contextharbor.services.hybrid_router import get_router
 
 # Get router for advanced operations
 router = await get_router()
@@ -191,7 +191,7 @@ Distinguishes between:
 
 ```bash
 # Check all backends
-python src/cognihub/services/hybrid_router.py --check
+python packages/contextharbor/src/contextharbor/services/hybrid_router.py --check
 
 # Expected output
 {
@@ -214,7 +214,7 @@ python src/cognihub/services/hybrid_router.py --check
 
 ```bash
 # List models per backend
-python src/cognihub/services/hybrid_router.py --models
+python packages/contextharbor/src/contextharbor/services/hybrid_router.py --models
 ```
 
 ## Best Practices
@@ -242,7 +242,7 @@ python src/cognihub/services/hybrid_router.py --models
 
 ## Integration
 
-### With CogniHub Features
+### With ContextHarbor Features
 The hybrid router integrates seamlessly with:
 - **Native tool calling** (Ollama format)
 - **RAG document retrieval**
@@ -253,7 +253,7 @@ The hybrid router integrates seamlessly with:
 ### API Integration
 ```python
 # In FastAPI endpoint
-from cognihub.services.hybrid_router import smart_chat
+from contextharbor.services.hybrid_router import smart_chat
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):

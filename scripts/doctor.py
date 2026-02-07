@@ -71,7 +71,7 @@ def _http_get(url: str, timeout_s: float = 2.0) -> tuple[bool, str]:
 
 
 def main() -> int:
-    print("CogniHub doctor")
+    print("ContextHarbor doctor")
     print("")
 
     # Python

@@ -1,5 +1,5 @@
 @echo off
-echo CogniHub - Windows Setup
+echo ContextHarbor - Windows Setup
 echo.
 
 echo Creating virtual environment...
@@ -12,7 +12,7 @@ if %errorlevel% neq 0 (
 
 echo Installing workspace packages...
 call .venv\Scripts\python -m pip install -U pip
-call .venv\Scripts\python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+call .venv\Scripts\python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
 if %errorlevel% neq 0 (
     echo Failed to install dependencies. Please check Python and pip installation.
     pause

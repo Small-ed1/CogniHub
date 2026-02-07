@@ -1,13 +1,14 @@
-# CogniHub
+# ContextHarbor
 
-CogniHub is a local-first chat + tools + RAG workspace built around Ollama.
+ContextHarbor is a local-first chat + tools + RAG workspace built around Ollama.
 
 This repo uses a workspace layout with multiple Python packages developed together.
 
 ## What's In Here
 
-- `packages/cognihub`: FastAPI backend + web UI + tests
-- `packages/ollama_cli`: `ollama-cli` library + CLI (shared clients/tools used by CogniHub)
+- `packages/contextharbor`: FastAPI backend + web UI + tests
+- `packages/contextharbor`: FastAPI backend + web UI + tests
+- `packages/ollama_cli`: `ollama-cli` library + CLI (shared clients/tools used by ContextHarbor)
 - `scripts/`: helper scripts (env wizard, doctor, etc.)
 
 ## Quick Start
@@ -25,19 +26,19 @@ python -m venv .venv
 # - macOS/Linux:         source .venv/bin/activate
 
 python -m pip install -U pip
-python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
 
 python -m pytest
 
-# Start CogniHub (creates default config on first run)
-cognihub run
+# Start ContextHarbor (creates default config on first run)
+contextharbor run
 ```
 
 Open `http://127.0.0.1:8000`.
 
 ## Configuration (v1.0)
 
-CogniHub uses TOML config files (single authoritative format):
+ContextHarbor uses TOML config files (single authoritative format):
 
 - `core.toml` (models, ports, limits, paths)
 - `tools.toml` (enable/disable tools + tool plugins)
@@ -45,16 +46,16 @@ CogniHub uses TOML config files (single authoritative format):
 
 Default config directory:
 
-- Windows: `%APPDATA%\\cognihub`
-- macOS/Linux: `~/.config/cognihub`
+- Windows: `%APPDATA%\\contextharbor`
+- macOS/Linux: `~/.config/contextharbor`
 
-Override with `COGNIHUB_CONFIG_DIR=/path/to/dir`.
+Override with `CONTEXTHARBOR_CONFIG_DIR=/path/to/dir`.
 
-See `docs/how-cognihub-works.md` for an end-to-end overview.
+See `docs/how-contextharbor-works.md` for an end-to-end overview.
 
 ## Web UI
 
-The UI is served from `packages/cognihub/web/static/`.
+The UI is served from `packages/contextharbor/web/static/`.
 
 Routes:
 - `#/home`
@@ -69,7 +70,7 @@ Most behavior is configurable under Settings; sources are synced between Setting
 
 ## Offline Sources
 
-CogniHub can use offline sources (Kiwix ZIMs, EPUB libraries) for RAG.
+ContextHarbor can use offline sources (Kiwix ZIMs, EPUB libraries) for RAG.
 
 Configure paths/endpoints in `core.toml` (and, for now, a few optional env vars are still honored in some modules; treat TOML as authoritative).
 
@@ -104,7 +105,7 @@ If you use different models, set them in `core.toml` under `[models]`.
 
 ### Kiwix (Offline ZIMs)
 
-CogniHub can search and open pages from a local Kiwix server, and list `.zim` files from a directory.
+ContextHarbor can search and open pages from a local Kiwix server, and list `.zim` files from a directory.
 
 Install Kiwix:
 - Arch: `sudo pacman -S kiwix-tools`
@@ -129,7 +130,7 @@ ZIMs are not bundled; download them from a trusted source (e.g. Kiwix library).
 
 ### EPUB Ingestion
 
-CogniHub can ingest EPUBs into RAG.
+ContextHarbor can ingest EPUBs into RAG.
 
 Set an ebooks directory:
 
@@ -168,6 +169,6 @@ This can create `~/zims -> /your/zims/path` and `~/Ebooks -> /your/ebooks/path` 
 
 ```bash
 python -m pytest
-python -m mypy packages/cognihub/src/cognihub --ignore-missing-imports
+python -m mypy packages/contextharbor/src/contextharbor --ignore-missing-imports
 python -m mypy packages/ollama_cli/src/ollama_cli
 ```

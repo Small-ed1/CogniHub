@@ -15,10 +15,10 @@
 
 ```bash
 sudo ./scripts/install-service.sh    # Install service
-sudo systemctl start cognihub
-sudo systemctl stop cognihub
-sudo systemctl status cognihub
-sudo journalctl -u cognihub -f
+sudo systemctl start contextharbor
+sudo systemctl stop contextharbor
+sudo systemctl status contextharbor
+sudo journalctl -u contextharbor -f
 ```
 
 ## Access

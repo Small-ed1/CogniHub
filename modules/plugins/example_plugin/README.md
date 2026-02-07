@@ -1,6 +1,6 @@
-# Example CogniHub Tool Plugin
+# Example ContextHarbor Tool Plugin
 
-This is a minimal tool plugin demonstrating CogniHub's tool extension API.
+This is a minimal tool plugin demonstrating ContextHarbor's tool extension API.
 
 ## Install
 
@@ -12,15 +12,15 @@ pip install -e modules/plugins/example_plugin
 
 ## Enable
 
-Edit your `tools.toml` (usually under `%APPDATA%\\cognihub` on Windows):
+Edit your `tools.toml` (usually under `%APPDATA%\\contextharbor` on Windows):
 
 ```toml
 [tools]
 enabled = ["web_search", "doc_search", "local_file_read", "example_time"]
-plugin_modules = ["cognihub_example_plugin"]
+plugin_modules = ["contextharbor_example_plugin"]
 ```
 
-Restart CogniHub.
+Restart ContextHarbor.
 
 ## Tools
 
